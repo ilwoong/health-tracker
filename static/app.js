@@ -101,6 +101,37 @@ function show(viewId) {
   }
 }
 
+/* ===== 브라우저 뒤로 가기 =====
+   화면을 열 때마다 history에 쌓아, 마우스/브라우저의 뒤로 가기가 사이트를 벗어나지 않고
+   이전 화면으로 가게 한다. '← 목록'·'취소' 버튼도 같은 동작(goBack)을 쓴다. */
+let navigating = false;   // popstate로 들어온 전환이면 history를 다시 쌓지 않음
+
+function pushView(state) {
+  if (!navigating) history.pushState(state, "");
+}
+
+function goBack() {
+  history.back();
+}
+
+window.addEventListener("popstate", (e) => {
+  if (!document.getElementById("view-batch").hidden && batchHasEdits()
+      && !confirm("입력한 값이 저장되지 않았습니다. 나갈까요?")) {
+    history.pushState({ view: "batch" }, "");   // 머무르기: 방금 빠져나온 항목을 다시 쌓는다
+    return;
+  }
+  const st = e.state;
+  navigating = true;
+  try {
+    if (!currentUser || !st || st.view === "login") loadLogin();
+    else if (st.view === "detail") showDetail(st.itemId);
+    else if (st.view === "batch") showBatch();
+    else showDashboard();
+  } finally {
+    navigating = false;
+  }
+});
+
 /* ===== 로그인 화면 ===== */
 async function loadLogin() {
   users = await api("/api/users");
@@ -151,11 +182,13 @@ function login(user) {
 function logout() {
   currentUser = null;
   localStorage.removeItem(LS_KEY);
+  pushView({ view: "login" });
   loadLogin();
 }
 
 /* ===== 대시보드 ===== */
 async function showDashboard() {
+  pushView({ view: "dashboard" });
   show("view-dashboard");
   document.getElementById("dash-username").textContent = `${currentUser.name}님`;
   document.getElementById("dash-userinfo").textContent =
@@ -274,6 +307,7 @@ async function showDetail(itemId) {
   currentItem = items.find((i) => i.id === itemId);
   if (!currentItem) return;
 
+  pushView({ view: "detail", itemId });
   show("view-detail");
   renderDetailHeader();
 
@@ -548,6 +582,7 @@ document.getElementById("result-form").onsubmit = async (e) => {
 let batchDate = null;   // 기존 값을 불러온 날짜 (날짜 변경 취소 시 되돌릴 값)
 
 async function showBatch() {
+  pushView({ view: "batch" });
   show("view-batch");
   document.getElementById("b-date").value = toLocalISO(new Date());
   document.getElementById("b-note").value = "";
@@ -665,8 +700,7 @@ async function onBatchDateChange() {
 }
 
 function leaveBatch() {
-  if (batchHasEdits() && !confirm("입력한 값이 저장되지 않았습니다. 나갈까요?")) return;
-  showDashboard();
+  goBack();   // 미저장 확인은 popstate 핸들러가 한다
 }
 
 document.getElementById("batch-form").onsubmit = async (e) => {
@@ -695,7 +729,8 @@ document.getElementById("batch-form").onsubmit = async (e) => {
     updateBatchSaveButton();
     return;
   }
-  showDashboard();
+  document.getElementById("batch-rows").innerHTML = "";   // 저장했으니 미저장 확인이 뜨지 않게
+  goBack();
 };
 
 /* ===== 사용자 추가/수정 모달 ===== */
@@ -808,7 +843,7 @@ function editCurrentItem() { openItemForm(currentItem); }
 async function deleteCurrentItem() {
   if (!confirm(`'${currentItem.item_name}' 항목과 모든 사용자의 관련 기록을 삭제할까요?`)) return;
   await api(`/api/items/${currentItem.id}`, { method: "DELETE" });
-  showDashboard();
+  goBack();
 }
 
 document.getElementById("item-form").onsubmit = async (e) => {
@@ -846,7 +881,7 @@ document.getElementById("item-form").onsubmit = async (e) => {
   items = await api(`/api/users/${currentUser.id}/summary`);
   if (currentItem && editingItemId === currentItem.id) {
     currentItem = items.find((i) => i.id === saved.id);
-    if (!currentItem) { showDashboard(); return; } // 성별 변경으로 더 이상 안 보이는 경우
+    if (!currentItem) { goBack(); return; } // 성별 변경으로 더 이상 안 보이는 경우
     renderDetailHeader();
     refreshResults();
   } else if (!document.getElementById("view-dashboard").hidden) {
@@ -1087,10 +1122,15 @@ document.getElementById("import-form").onsubmit = async (e) => {
   users = await api("/api/users");
   const savedId = Number(localStorage.getItem(LS_KEY));
   const saved = users.find((u) => u.id === savedId);
+  // 첫 화면은 history에 쌓지 않고 현재 항목에 상태만 기록한다
+  navigating = true;
   if (saved) {
     currentUser = saved;
+    history.replaceState({ view: "dashboard" }, "");
     showDashboard();
   } else {
+    history.replaceState({ view: "login" }, "");
     loadLogin();
   }
+  navigating = false;
 })();
