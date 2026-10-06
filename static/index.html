@@ -47,6 +47,7 @@
           <button type="button" onclick="closeSettingsMenu(); openCategoryDialog()">카테고리 관리</button>
           <button type="button" onclick="closeSettingsMenu(); openOrderDialog()">순서 편집</button>
           <button type="button" onclick="closeSettingsMenu(); openImportDialog()">CSV 가져오기</button>
+          <button type="button" onclick="closeSettingsMenu(); openExportDialog()">CSV 내보내기</button>
         </div>
       </details>
       <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
@@ -260,6 +261,25 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('merge-dialog').close()">취소</button>
       <button type="submit" id="m-submit" class="btn btn-primary" disabled>합치기</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== CSV 내보내기 모달 ===== -->
+<dialog id="export-dialog">
+  <form id="export-form">
+    <h2>CSV 내보내기</h2>
+    <label>종류
+      <select id="exp-kind">
+        <option value="categories">카테고리</option>
+        <option value="items">검진 항목 (판정 구간 포함)</option>
+        <option value="results">검진 결과 (현재 사용자)</option>
+      </select>
+    </label>
+    <p class="hint">가져오기와 같은 형식이라 내려받은 파일을 그대로 다시 가져올 수 있습니다. 항목은 표시 순서대로 나옵니다. 엑셀에서 바로 열립니다.</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('export-dialog').close()">닫기</button>
+      <button type="submit" class="btn btn-primary">다운로드</button>
     </div>
   </form>
 </dialog>

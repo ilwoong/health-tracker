@@ -1,4 +1,4 @@
-const CACHE = "health-tracker-v12";
+const CACHE = "health-tracker-v13";
 const ASSETS = [
   "/",
   "/static/style.css",

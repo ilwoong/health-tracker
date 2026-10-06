@@ -37,6 +37,7 @@ Raspberry Pi 5 + Docker 환경을 대상으로 하며, PC/모바일 브라우저
   - 형식은 [spec/004](spec/004-csv-import.md) 참고
 - 항목 합치기: 상세 화면 `합치기` → 값 유형이 같은 다른 항목의 모든 기록을 현재 항목으로 옮기고 그 항목을 삭제
   - 같은 날짜 충돌은 남길 항목 값 유지. 남길 항목의 대상 성별에 가려질 기록이 있으면 중단. 실행 전 미리보기 ([spec/005](spec/005-merge-items.md))
+- CSV 내보내기: `설정 ▾` → `CSV 내보내기`. 가져오기와 같은 형식(그대로 다시 가져올 수 있음), 항목은 표시 순서대로, UTF-8 BOM
 - 대시보드: 항목별 최근 결과 카드 + 판정 배지 + 항목 검색
 - 상세: Chart.js 선 그래프(판정 구간을 색상 밴드로 표시) + 기록 표
   - 조회 기간 설정: 전체 / 최근 1·3·5년 프리셋 + 사용자 지정 기간
@@ -99,6 +100,7 @@ SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLO
 - `GET /api/items/{keep}/merge-preview?from={id}`, `POST /api/items/{keep}/merge` — body `{from_id}`
 - `POST /api/import/categories`, `POST /api/import/items`, `POST /api/users/{uid}/import/results` — body `{csv}` (items는 `keep_order` 옵션)
   - 검증 오류는 422, `detail`은 행 번호가 붙은 메시지 배열
+- `GET /api/export/categories.csv`, `GET /api/export/items.csv`, `GET /api/users/{uid}/export/results.csv` — text/csv, BOM 포함
 - `GET /api/items[?gender=M|F]`, `POST /api/items`, `PUT/DELETE /api/items/{id}`
   - ranges 포함, PUT은 구간 전체 교체
   - TEXT 항목은 ranges를 비워야 하고, NUMBER 항목은 1개 이상 필요

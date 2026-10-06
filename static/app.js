@@ -1171,6 +1171,24 @@ document.getElementById("import-form").onsubmit = async (e) => {
   }
 };
 
+/* ===== CSV 내보내기 모달 ===== */
+function openExportDialog() {
+  document.getElementById("export-dialog").showModal();
+}
+
+document.getElementById("export-form").onsubmit = (e) => {
+  e.preventDefault();
+  const kind = document.getElementById("exp-kind").value;
+  const url = kind === "results"
+    ? `/api/users/${currentUser.id}/export/results.csv`
+    : `/api/export/${kind}.csv`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "";   // 파일 이름은 서버의 Content-Disposition을 따른다
+  a.click();
+  document.getElementById("export-dialog").close();
+};
+
 /* ===== 시작 ===== */
 (async function start() {
   users = await api("/api/users");

@@ -14,9 +14,10 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import date
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
@@ -912,6 +913,71 @@ def import_results(user_id: int, body: CsvIn):
             else:
                 created += 1
         return {"created": created, "updated": updated}
+
+
+# ---------- CSV 내보내기 (spec/006) — 가져오기와 같은 형식, 그대로 다시 가져올 수 있다 ----------
+
+def _fmt_num(v):
+    return "" if v is None else f"{v:g}"
+
+
+def _csv_response(filename: str, header: list[str], rows) -> Response:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    w.writerows(rows)
+    return Response(
+        "\ufeff" + buf.getvalue(),   # BOM: 엑셀이 한글을 바로 읽도록
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},   # 한글 파일명
+    )
+
+
+@app.get("/api/export/categories.csv")
+def export_categories():
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT name FROM checkup_categories ORDER BY sort_order IS NULL, sort_order, name COLLATE NOCASE, id")
+        return _csv_response("categories.csv", ["name"], ([r["name"]] for r in rows))
+
+
+@app.get("/api/export/items.csv")
+def export_items():
+    with db() as conn:
+        items = conn.execute(
+            """SELECT i.*, c.name AS category FROM checkup_items i
+                 LEFT JOIN checkup_categories c ON c.id = i.category_id
+                ORDER BY i.sort_order IS NULL, i.sort_order, i.item_name COLLATE NOCASE, i.id""").fetchall()
+        out = []
+        for it in items:
+            base = [it["item_name"], it["category"] or "", it["unit"], it["value_type"], it["target_gender"]]
+            ranges = conn.execute(
+                """SELECT judgement_level, min_value, max_value, color FROM checkup_item_ranges
+                    WHERE item_id = ? ORDER BY COALESCE(min_value, -1e308)""", (it["id"],)).fetchall()
+            if not ranges:
+                out.append(base + ["", "", "", ""])
+            for r in ranges:
+                out.append(base + [r["judgement_level"], _fmt_num(r["min_value"]), _fmt_num(r["max_value"]), r["color"]])
+        return _csv_response(
+            "items.csv",
+            ["item_name", "category", "unit", "value_type", "target_gender",
+             "judgement_level", "min_value", "max_value", "color"], out)
+
+
+@app.get("/api/users/{user_id}/export/results.csv")
+def export_results(user_id: int):
+    with db() as conn:
+        user = _get_or_404(conn, "users", user_id, "사용자")
+        rows = conn.execute(
+            """SELECT r.date, i.item_name, r.value, r.value_text, r.note
+                 FROM checkup_results r JOIN checkup_items i ON i.id = r.item_id
+                WHERE r.user_id = ?
+                ORDER BY i.sort_order IS NULL, i.sort_order, i.item_name COLLATE NOCASE, i.id, r.date""",
+            (user_id,))
+        out = ([r["date"], r["item_name"], _fmt_num(r["value"]) if r["value_text"] is None else r["value_text"], r["note"]]
+               for r in rows)
+        return _csv_response(f"results_{user['name']}_{date.today().isoformat()}.csv",
+                             ["date", "item_name", "value", "note"], out)
 
 
 # ---------- 정적 파일 ----------
