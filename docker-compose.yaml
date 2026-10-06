@@ -1,0 +1,10 @@
+services:
+  health-tracker:
+    build: .
+    image: health-tracker:latest
+    container_name: health-tracker
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data   # SQLite DB — 이 폴더만 백업하면 됩니다

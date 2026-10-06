@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>건강 기록</title>
+<meta name="theme-color" content="#F5F8F7">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ===== 로그인(사용자 선택) 화면 ===== -->
+<main id="view-login" class="view" hidden>
+  <header class="app-header center">
+    <div>
+      <p class="eyebrow">HEALTH RECORD</p>
+      <h1>건강 기록</h1>
+      <p class="sub">누구의 기록을 볼까요?</p>
+    </div>
+  </header>
+
+  <section id="user-list" class="user-grid"></section>
+
+  <div class="login-footer">
+    <button class="btn btn-primary" onclick="openUserForm()">+ 사용자 추가</button>
+  </div>
+</main>
+
+<!-- ===== 대시보드(항목 카드) 화면 ===== -->
+<main id="view-dashboard" class="view" hidden>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">HEALTH RECORD</p>
+      <h1 id="dash-username"></h1>
+      <p id="dash-userinfo" class="sub"></p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-ghost" onclick="logout()">사용자 전환</button>
+      <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
+    </div>
+  </header>
+
+  <div class="search-row">
+    <input type="search" id="item-search" placeholder="검진 항목 검색" oninput="renderDashboard()">
+  </div>
+
+  <section id="item-cards" class="card-grid"></section>
+
+  <div id="dash-empty" class="empty" hidden>
+    <p>표시할 검진 항목이 없습니다.</p>
+    <p class="empty-sub">공복혈당, 혈압처럼 추적하고 싶은 항목을 추가해 보세요.</p>
+    <button class="btn btn-primary" onclick="openItemForm()">첫 항목 추가</button>
+  </div>
+</main>
+
+<!-- ===== 항목 상세 화면 ===== -->
+<main id="view-detail" class="view" hidden>
+  <header class="app-header detail-header">
+    <button class="btn btn-ghost" onclick="showDashboard()">&larr; 목록</button>
+    <div class="detail-title">
+      <h1 id="detail-name"></h1>
+      <p id="detail-ranges" class="range-caption"></p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-ghost" onclick="editCurrentItem()">수정</button>
+      <button class="btn btn-ghost btn-danger" onclick="deleteCurrentItem()">삭제</button>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="period-row">
+      <div class="period-presets">
+        <button class="chip" data-preset="all">전체</button>
+        <button class="chip" data-preset="1">최근 1년</button>
+        <button class="chip" data-preset="3">최근 3년</button>
+        <button class="chip" data-preset="5">최근 5년</button>
+      </div>
+      <div class="period-custom">
+        <input type="date" id="p-from" onchange="onCustomPeriod()">
+        <span>~</span>
+        <input type="date" id="p-to" onchange="onCustomPeriod()">
+      </div>
+    </div>
+    <div class="chart-wrap" id="chart-wrap"><canvas id="chart"></canvas></div>
+    <p id="chart-na" class="hint" hidden>문자열 항목은 그래프 대신 아래 기록 표로 확인합니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2>검진 결과 입력</h2>
+    <p class="hint">과거 날짜를 입력해도 자동으로 날짜순으로 정렬됩니다. 같은 날짜에 다시 입력하면 값을 덮어씁니다.</p>
+    <form id="result-form" class="row-form">
+      <label>날짜 <input type="date" id="r-date" required></label>
+      <label id="r-value-label">값 <input type="number" id="r-value" step="any" inputmode="decimal" required></label>
+      <label class="grow">비고 <input type="text" id="r-note" placeholder="예: 국가건강검진, 자가 측정"></label>
+      <button type="submit" class="btn btn-primary">기록</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>기록 <span id="history-count" class="count-badge"></span></h2>
+    <table class="history">
+      <thead><tr><th>날짜</th><th class="num">값</th><th>판정</th><th>비고</th><th></th></tr></thead>
+      <tbody id="history-body"></tbody>
+    </table>
+    <p id="history-empty" class="empty-sub" hidden>선택한 기간에 기록이 없습니다.</p>
+  </section>
+</main>
+
+<!-- ===== 사용자 추가/수정 모달 ===== -->
+<dialog id="user-dialog">
+  <form id="user-form" method="dialog">
+    <h2 id="user-form-title">사용자 추가</h2>
+    <label>이름 <input type="text" id="u-name" placeholder="동명이인은 별명/이니셜로 구분" required></label>
+    <label>생일 <input type="date" id="u-birth" required></label>
+    <fieldset class="gender-set">
+      <legend>성별</legend>
+      <label class="radio"><input type="radio" name="u-gender" value="M" required> 남</label>
+      <label class="radio"><input type="radio" name="u-gender" value="F"> 여</label>
+    </fieldset>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-dialog').close()">취소</button>
+      <button type="submit" class="btn btn-primary">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 항목 추가/수정 모달 ===== -->
+<dialog id="item-dialog">
+  <form id="item-form" method="dialog">
+    <h2 id="item-form-title">검진 항목 추가</h2>
+    <label>항목 이름 <input type="text" id="i-name" placeholder="예: 공복혈당" required></label>
+    <p class="hint">같은 이름의 항목은 대상 성별이 '전체'면 하나만, 남/여로 나누면 성별당 하나씩 만들 수 있습니다.</p>
+    <div class="two-col">
+      <label>단위 <input type="text" id="i-unit" placeholder="예: mg/dL"></label>
+      <label>값 유형
+        <select id="i-vtype" onchange="onValueTypeChange()">
+          <option value="NUMBER">숫자</option>
+          <option value="TEXT">문자열</option>
+        </select>
+      </label>
+    </div>
+    <label>대상 성별
+      <select id="i-gender">
+        <option value="ALL">전체</option>
+        <option value="M">남성만</option>
+        <option value="F">여성만</option>
+      </select>
+    </label>
+
+    <div id="ranges-section">
+      <div class="ranges-head">
+        <span>판정 구간</span>
+        <button type="button" class="btn btn-ghost btn-small" onclick="addRangeRow()">+ 구간 추가</button>
+      </div>
+      <p class="hint">정상 구간은 필수입니다. 경계·위험 등은 필요에 따라 추가하세요. 최소/최대 중 한쪽만 입력하면 열린 구간(이상/이하)이 됩니다.</p>
+      <div id="range-rows"></div>
+    </div>
+    <p id="text-type-hint" class="hint" hidden>문자열 항목은 판정 구간 없이 기록만 관리합니다. (예: 요잠혈의 음성/양성)</p>
+
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('item-dialog').close()">취소</button>
+      <button type="submit" class="btn btn-primary">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js');
+}
+</script>
+</body>
+</html>

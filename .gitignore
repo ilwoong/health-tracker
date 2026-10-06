@@ -1,0 +1,13 @@
+# SQLite 데이터 (docker volume)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
