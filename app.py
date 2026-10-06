@@ -692,10 +692,21 @@ class CsvIn(BaseModel):
     keep_order: bool = False   # 항목 가져오기: 파일의 행 순서를 표시 순서(sort_order)로 저장
 
 
-def _read_csv(text: str, required: list[str]) -> list[tuple[int, dict]]:
+# 헤더로 파일 종류를 추정해, 종류를 잘못 고른 경우 모호한 오류 대신 한 줄로 안내한다
+_KIND_SIGNATURE = {
+    "categories": ("카테고리", {"name"}),
+    "items": ("검진 항목", {"judgement_level", "value_type", "target_gender"}),
+    "results": ("검진 결과", {"date", "value"}),
+}
+
+
+def _read_csv(text: str, required: list[str], kind: str) -> list[tuple[int, dict]]:
     """(행 번호, {열: 값}) 목록. 헤더 검사, 값 공백 제거, 빈 줄 제외."""
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     headers = [h.strip() for h in (reader.fieldnames or [])]
+    for other, (label, sig) in _KIND_SIGNATURE.items():
+        if other != kind and sig & set(headers) and not (_KIND_SIGNATURE[kind][1] & set(headers)):
+            raise HTTPException(422, [f"'{label}' 파일로 보입니다. 가져오기 종류를 '{label}'(으)로 바꾸세요"])
     missing = [c for c in required if c not in headers]
     if missing:
         raise HTTPException(422, [f"필요한 열이 없습니다: {', '.join(missing)}"])
@@ -728,7 +739,7 @@ def _suggest_color(label: str) -> str:
 
 @app.post("/api/import/categories")
 def import_categories(body: CsvIn):
-    rows = _read_csv(body.csv, ["name"])
+    rows = _read_csv(body.csv, ["name"], "categories")
     errors, names = [], []
     for ln, row in rows:
         try:
@@ -750,7 +761,7 @@ def import_categories(body: CsvIn):
 
 @app.post("/api/import/items")
 def import_items(body: CsvIn):
-    rows = _read_csv(body.csv, ["item_name"])
+    rows = _read_csv(body.csv, ["item_name"], "items")
     errors: list[str] = []
     groups: dict[tuple[str, str], dict] = {}   # (이름, 성별) → {first_ln, fields, ranges}
     for ln, row in rows:
@@ -854,7 +865,7 @@ def import_items(body: CsvIn):
 
 @app.post("/api/users/{user_id}/import/results")
 def import_results(user_id: int, body: CsvIn):
-    rows = _read_csv(body.csv, ["date", "item_name", "value"])
+    rows = _read_csv(body.csv, ["date", "item_name", "value"], "results")
     with db() as conn:
         user = _get_or_404(conn, "users", user_id, "사용자")
         visible = {
