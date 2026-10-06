@@ -261,6 +261,10 @@
       <input type="file" id="imp-file" accept=".csv,text/csv" required onchange="clearImportResult()">
       <button type="button" class="btn btn-ghost btn-small" onclick="downloadTemplate()">양식 다운로드</button>
     </div>
+    <label id="imp-keep-order-row" class="check">
+      <input type="checkbox" id="imp-keep-order" checked>
+      파일의 행 순서를 표시 순서로 저장 (카테고리는 처음 등장한 순서)
+    </label>
     <p class="hint">파일 전체를 먼저 검증하고, 오류가 하나라도 있으면 아무것도 저장하지 않습니다. 이름이 같은 것은 덮어씁니다. UTF-8과 CP949(엑셀 기본) 모두 읽습니다.</p>
     <div id="imp-result" hidden></div>
     <div class="dialog-actions">

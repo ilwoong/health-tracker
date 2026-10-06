@@ -46,6 +46,9 @@
   category/unit/value_type은 첫 줄 값을 쓰며, 뒤 줄이 다르면 오류.
 - TEXT 항목은 한 줄만 쓰고 구간 열은 비운다. 구간이 있으면 오류.
 - 기존 항목을 덮어쓸 때는 PUT과 같이 구간 전체를 교체한다. 결과가 있는 항목의 value_type 변경은 오류.
+- **행 순서를 표시 순서로 저장** 옵션(기본 켬): 파일에 나온 항목 순서를 그대로 `sort_order`로 저장하고,
+  카테고리는 파일에 처음 등장한 순서로 저장한다([003](003-display-order.md)). 파일에 없는 항목·카테고리는 건드리지 않는다.
+  검진 결과지 순서대로 정리한 파일을 올리면 대시보드·일괄 입력이 그 순서로 보인다.
 - 같은 이름 규칙(ALL과 M/F 공존 불가)은 001과 동일하게 검사한다.
 
 ### 검진 결과 `results.csv` — 로그인한 사용자의 결과
@@ -69,7 +72,7 @@
 ## API
 
 - `POST /api/import/categories` — body `{csv}` → `{created, updated}`
-- `POST /api/import/items` — body `{csv}` → `{created, updated, categories_created}`
+- `POST /api/import/items` — body `{csv, keep_order}` → `{created, updated, categories_created}`
 - `POST /api/users/{uid}/import/results` — body `{csv}` → `{created, updated}`
 - 검증 오류: 422, `detail`은 오류 메시지 문자열 배열
 - 헤더에 필수 열이 없거나 데이터 줄이 없으면 422
@@ -77,6 +80,5 @@
 ## 범위 밖
 
 - CSV 내보내기 (백업 용도로는 `data/health.db` 복사)
-- 파일 안의 행 순서를 표시 순서(003)로 저장
 - 여러 사용자의 결과를 한 파일로 가져오기 (파일에 user 열 추가로 확장 가능)
 - 엑셀(.xlsx) 직접 읽기

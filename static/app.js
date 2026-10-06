@@ -1053,6 +1053,7 @@ function openImportDialog() {
 function onImportKindChange() {
   const kind = IMPORT_KINDS[document.getElementById("imp-kind").value];
   document.getElementById("imp-hint").textContent = kind.hint;
+  document.getElementById("imp-keep-order-row").hidden = document.getElementById("imp-kind").value !== "items";
   clearImportResult();
 }
 
@@ -1101,7 +1102,11 @@ document.getElementById("import-form").onsubmit = async (e) => {
     const res = await fetch(kind.path(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ csv: await readCsvFile(file) }),
+      body: JSON.stringify({
+        csv: await readCsvFile(file),
+        keep_order: document.getElementById("imp-kind").value === "items"
+          && document.getElementById("imp-keep-order").checked,
+      }),
     });
     const j = await res.json();
     if (!res.ok) {

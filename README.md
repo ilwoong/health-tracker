@@ -33,6 +33,7 @@ Raspberry Pi 5 + Docker 환경을 대상으로 하며, PC/모바일 브라우저
   - 양식 다운로드 제공. UTF-8과 CP949(Windows 엑셀 기본 저장) 모두 읽음
   - 파일 전체를 먼저 검증하고 오류가 하나라도 있으면 행 번호와 함께 보여 주고 아무것도 저장하지 않음
   - 이름이 같으면 덮어쓰기(항목은 구간 전체 교체), 항목 CSV의 없는 카테고리는 자동 생성
+  - 항목 CSV는 파일의 행 순서를 표시 순서로 저장하는 옵션 제공(기본 켬)
   - 형식은 [spec/004](spec/004-csv-import.md) 참고
 - 대시보드: 항목별 최근 결과 카드 + 판정 배지 + 항목 검색
 - 상세: Chart.js 선 그래프(판정 구간을 색상 밴드로 표시) + 기록 표
@@ -93,7 +94,7 @@ SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLO
 - `GET/POST /api/users`, `PUT/DELETE /api/users/{id}`
 - `GET/POST /api/categories`, `PUT/DELETE /api/categories/{id}` — 응답에 소속 항목 수(`item_count`) 포함
 - `PUT /api/order` — body `{category_ids, item_ids}`, 배열 인덱스를 표시 순서로 저장 (한 트랜잭션)
-- `POST /api/import/categories`, `POST /api/import/items`, `POST /api/users/{uid}/import/results` — body `{csv}`
+- `POST /api/import/categories`, `POST /api/import/items`, `POST /api/users/{uid}/import/results` — body `{csv}` (items는 `keep_order` 옵션)
   - 검증 오류는 422, `detail`은 행 번호가 붙은 메시지 배열
 - `GET /api/items[?gender=M|F]`, `POST /api/items`, `PUT/DELETE /api/items/{id}`
   - ranges 포함, PUT은 구간 전체 교체

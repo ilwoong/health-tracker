@@ -629,6 +629,7 @@ def delete_result(result_id: int):
 
 class CsvIn(BaseModel):
     csv: str
+    keep_order: bool = False   # 항목 가져오기: 파일의 행 순서를 표시 순서(sort_order)로 저장
 
 
 def _read_csv(text: str, required: list[str]) -> list[tuple[int, dict]]:
@@ -737,6 +738,7 @@ def import_items(body: CsvIn):
         raise HTTPException(422, errors)
 
     created = updated = categories_created = 0
+    item_ids: list[int] = []
     with db() as conn:
         for category, it in items:
             category_id = None
@@ -779,6 +781,14 @@ def import_items(body: CsvIn):
                     """INSERT INTO checkup_item_ranges (item_id, min_value, max_value, judgement_level, color)
                        VALUES (?, ?, ?, ?, ?)""",
                     (item_id, r.min_value, r.max_value, r.judgement_level, r.color))
+            item_ids.append(item_id)
+        if body.keep_order:
+            # 항목은 파일 행 순서, 카테고리는 파일에 처음 등장한 순서. 파일에 없는 것은 건드리지 않는다.
+            for i, item_id in enumerate(item_ids):
+                conn.execute("UPDATE checkup_items SET sort_order = ? WHERE id = ?", (i, item_id))
+            seen = list(dict.fromkeys(category for category, _ in items if category))
+            for i, name in enumerate(seen):
+                conn.execute("UPDATE checkup_categories SET sort_order = ? WHERE name = ?", (i, name))
     return {"created": created, "updated": updated, "categories_created": categories_created}
 
 
