@@ -1,6 +1,6 @@
 # 003. 검진 항목·카테고리 표시 순서
 
-- 상태: 구현됨
+- 상태: 구현됨 (`a0ade21`, 설정 메뉴 `5142e8a`)
 - 작성일: 2026-10-06
 - 기준 문서: [design.md](design.md), [001](001-item-category.md), [002](002-batch-result-input.md)
 

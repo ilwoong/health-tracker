@@ -1,6 +1,6 @@
 # 004. CSV 가져오기
 
-- 상태: 구현됨
+- 상태: 구현됨 (`fd1d46d`)
 - 작성일: 2026-10-06
 - 기준 문서: [design.md](design.md), [001](001-item-category.md), [002](002-batch-result-input.md)
 
