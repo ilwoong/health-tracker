@@ -30,6 +30,13 @@ function fmt(v) {
   return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
 }
 
+/* 브라우저 로컬 시간대 기준 YYYY-MM-DD (toISOString은 UTC라 KST 오전 9시 전에는 어제가 됨) */
+function toLocalISO(d) {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -208,7 +215,7 @@ async function showDetail(itemId) {
   document.getElementById("p-to").value = "";
   updatePresetChips();
 
-  document.getElementById("r-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("r-date").value = toLocalISO(new Date());
   const vInput = document.getElementById("r-value");
   if (currentItem.value_type === "TEXT") {
     vInput.type = "text";
@@ -260,7 +267,7 @@ document.querySelectorAll(".period-presets .chip").forEach((chip) => {
     } else {
       const d = new Date();
       d.setFullYear(d.getFullYear() - Number(p));
-      period.from = d.toISOString().slice(0, 10);
+      period.from = toLocalISO(d);
       period.to = null;
     }
     document.getElementById("p-from").value = period.from ?? "";
@@ -472,7 +479,7 @@ let batchDate = null;   // 기존 값을 불러온 날짜 (날짜 변경 취소 
 
 async function showBatch() {
   show("view-batch");
-  document.getElementById("b-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("b-date").value = toLocalISO(new Date());
   document.getElementById("b-note").value = "";
   await loadBatchRows();
 }
