@@ -108,3 +108,6 @@ SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLO
 ## 보안 참고
 - 요구사항대로 인증 없이 이름 선택 로그인만 제공하므로, 반드시 내부망 전용으로 운영하세요.
 - 외부 접속이 필요해지면 포트포워딩 대신 VPN(Tailscale/WireGuard)을 사용하세요.
+
+## 라이선스
+[MIT](LICENSE)
