@@ -50,6 +50,9 @@ docker compose up -d --build
 ```
 데이터는 ./data/health.db (SQLite) 하나에 저장됩니다. 이 폴더만 백업하면 됩니다.
 
+새 버전을 배포하면 브라우저에서 **일반 새로고침 한 번**으로 반영됩니다.
+정적 파일은 `Cache-Control: no-cache`로 항상 재검증하고, Service Worker는 네트워크 우선(오프라인일 때만 캐시)입니다.
+
 ## Docker 없이 실행
 ```bash
 pip install -r requirements.txt

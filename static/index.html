@@ -273,7 +273,11 @@
 <script src="/static/app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/static/sw.js');
+  // 예전 버전은 /static/sw.js로 등록해 scope가 /static/이라 페이지를 제어하지 못했다. 남아 있으면 정리.
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    for (const r of regs) if (r.scope.endsWith('/static/')) r.unregister();
+  });
+  navigator.serviceWorker.register('/sw.js');
 }
 </script>
 </body>

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
@@ -838,6 +838,23 @@ def import_results(user_id: int, body: CsvIn):
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.get("/sw.js")
+def service_worker():
+    """루트에서 서빙해야 Service Worker scope가 '/'가 되어 앱 페이지를 제어한다."""
+    return FileResponse(os.path.join(STATIC_DIR, "sw.js"), media_type="application/javascript")
+
+
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """정적 파일은 항상 재검증(ETag → 304). 헤더가 없으면 브라우저가 휴리스틱으로 오래 캐시해
+    배포 후 새 HTML에 옛 CSS/JS가 섞여 보인다."""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path == "/sw.js" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
