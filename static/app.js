@@ -2,6 +2,8 @@
 let users = [];
 let currentUser = null;
 let items = [];          // 대시보드 요약 (ranges 포함)
+let categories = [];     // 카테고리 목록 (이름순)
+let categoryFilter = "all";   // "all" | "none"(미분류) | 카테고리 id
 let currentItem = null;
 let editingUserId = null;
 let editingItemId = null;
@@ -158,47 +160,113 @@ async function showDashboard() {
   document.getElementById("dash-username").textContent = `${currentUser.name}님`;
   document.getElementById("dash-userinfo").textContent =
     `${GENDER_LABEL[currentUser.gender]} · ${ageOf(currentUser.birth_date)}세`;
-  items = await api(`/api/users/${currentUser.id}/summary`);
+  [items, categories] = await Promise.all([
+    api(`/api/users/${currentUser.id}/summary`),
+    api("/api/categories"),
+  ]);
+  categoryFilter = "all";
   renderDashboard();
+}
+
+/* ===== 카테고리 묶기 ===== */
+function categoryName(id) {
+  return categories.find((c) => c.id === id)?.name ?? null;
+}
+
+/* 로그인 사용자에게 보이는 항목 중 카테고리가 있는 것이 하나도 없으면 묶지 않고 지금 화면 그대로 */
+function useCategories() {
+  return items.some((i) => i.category_id != null);
+}
+
+/* 카테고리 이름순 → 미분류 마지막. 항목이 없는 그룹은 뺀다 */
+function groupByCategory(list) {
+  const groups = [];
+  for (const c of categories) {
+    const its = list.filter((i) => i.category_id === c.id);
+    if (its.length) groups.push({ id: c.id, name: c.name, items: its });
+  }
+  const none = list.filter((i) => i.category_id == null);
+  if (none.length) groups.push({ id: null, name: "미분류", items: none });
+  return groups;
+}
+
+/* 칩은 성별 기준(items)으로만 판단하고 검색어는 무시 */
+function renderCategoryChips() {
+  const box = document.getElementById("cat-chips");
+  const groups = groupByCategory(items);
+  if (!groups.some((g) => g.id === categoryFilter || (g.id == null && categoryFilter === "none"))) {
+    categoryFilter = "all";   // 선택한 카테고리가 사라진 경우
+  }
+  box.innerHTML = "";
+  const entries = [{ key: "all", name: "전체" }, ...groups.map((g) => ({ key: g.id ?? "none", name: g.name }))];
+  for (const e of entries) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip" + (e.key === categoryFilter ? " active" : "");
+    chip.textContent = e.name;
+    chip.onclick = () => { categoryFilter = e.key; renderDashboard(); };
+    box.appendChild(chip);
+  }
 }
 
 function renderDashboard() {
   const q = document.getElementById("item-search").value.trim().toLowerCase();
-  const filtered = items.filter((i) => i.item_name.toLowerCase().includes(q));
+  let filtered = items.filter((i) => i.item_name.toLowerCase().includes(q));
+  const grouped = useCategories();
+  document.getElementById("cat-chips").hidden = !grouped;
+  if (grouped) {
+    renderCategoryChips();
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter((i) =>
+        categoryFilter === "none" ? i.category_id == null : i.category_id === categoryFilter);
+    }
+  }
 
   const grid = document.getElementById("item-cards");
   grid.innerHTML = "";
   document.getElementById("dash-empty").hidden = !(items.length === 0);
 
-  for (const it of filtered) {
-    const isText = it.value_type === "TEXT";
-    const matched = isText ? null : judgeRange(it.latest_value, it.ranges);
-    const card = document.createElement("button");
-    card.className = "metric-card";
-    card.onclick = () => showDetail(it.id);
-    let valueHtml;
-    if (isText) {
-      valueHtml = it.latest_value_text != null
-        ? `<span class="text-value">${escapeHtml(it.latest_value_text)}</span>`
-        : `<span class="no-data">기록 없음</span>`;
-    } else {
-      valueHtml = it.latest_value != null
-        ? `${fmt(it.latest_value)}<span class="unit">${escapeHtml(it.unit)}</span>`
-        : `<span class="no-data">기록 없음</span>`;
-    }
-    const genderTag = it.target_gender !== "ALL"
-      ? `<span class="gender-tag">${GENDER_LABEL[it.target_gender]}</span>` : "";
-    card.innerHTML = `
-      <div class="card-top">
-        <span class="card-name">${escapeHtml(it.item_name)}${genderTag}</span>
-        <span class="card-date">${it.latest_date ?? ""}</span>
-      </div>
-      <div class="card-bottom">
-        <div class="card-value">${valueHtml}</div>
-        ${badgeHtml(matched)}
-      </div>`;
-    grid.appendChild(card);
+  if (!grouped) {
+    for (const it of filtered) grid.appendChild(metricCard(it));
+    return;
   }
+  for (const g of groupByCategory(filtered)) {
+    const head = document.createElement("h2");
+    head.className = "cat-head";
+    head.textContent = g.name;
+    grid.appendChild(head);
+    for (const it of g.items) grid.appendChild(metricCard(it));
+  }
+}
+
+function metricCard(it) {
+  const isText = it.value_type === "TEXT";
+  const matched = isText ? null : judgeRange(it.latest_value, it.ranges);
+  const card = document.createElement("button");
+  card.className = "metric-card";
+  card.onclick = () => showDetail(it.id);
+  let valueHtml;
+  if (isText) {
+    valueHtml = it.latest_value_text != null
+      ? `<span class="text-value">${escapeHtml(it.latest_value_text)}</span>`
+      : `<span class="no-data">기록 없음</span>`;
+  } else {
+    valueHtml = it.latest_value != null
+      ? `${fmt(it.latest_value)}<span class="unit">${escapeHtml(it.unit)}</span>`
+      : `<span class="no-data">기록 없음</span>`;
+  }
+  const genderTag = it.target_gender !== "ALL"
+    ? `<span class="gender-tag">${GENDER_LABEL[it.target_gender]}</span>` : "";
+  card.innerHTML = `
+    <div class="card-top">
+      <span class="card-name">${escapeHtml(it.item_name)}${genderTag}</span>
+      <span class="card-date">${it.latest_date ?? ""}</span>
+    </div>
+    <div class="card-bottom">
+      <div class="card-value">${valueHtml}</div>
+      ${badgeHtml(matched)}
+    </div>`;
+  return card;
 }
 
 /* ===== 상세 화면 ===== */
@@ -253,6 +321,8 @@ function renderDetailHeader() {
   if (currentItem.target_gender !== "ALL") {
     parts.push(`${GENDER_LABEL[currentItem.target_gender]}성 항목`);
   }
+  const cat = categoryName(currentItem.category_id);
+  if (cat) parts.unshift(cat);
   document.getElementById("detail-ranges").textContent = parts.join(" · ");
 }
 
@@ -496,47 +566,58 @@ async function loadBatchRows() {
   box.innerHTML = "";
   document.getElementById("batch-empty").hidden = items.length > 0;
 
-  for (const it of items) {
-    const isText = it.value_type === "TEXT";
-    const old = byItem.get(it.id);
-    const row = document.createElement("div");
-    row.className = "batch-row";
-    row.dataset.itemId = it.id;
-    row.dataset.existing = old ? "1" : "";
-    row.dataset.origValue = old ? String(isText ? old.value_text : old.value) : "";
-    row.dataset.origNote = old ? old.note : "";
-    const genderTag = it.target_gender !== "ALL"
-      ? `<span class="gender-tag">${GENDER_LABEL[it.target_gender]}</span>` : "";
-    const inputAttrs = isText
-      ? `type="text" placeholder="예: 음성"`
-      : `type="number" step="any" inputmode="decimal"`;
-    row.innerHTML = `
-      <div class="br-name">${escapeHtml(it.item_name)}${genderTag}</div>
-      <div class="br-value">
-        <input class="br-input" ${inputAttrs} aria-label="${escapeHtml(it.item_name)} 값">
-        <span class="unit">${escapeHtml(it.unit)}</span>
-      </div>
-      <div class="br-badge"></div>
-      <input type="text" class="br-note" placeholder="항목별 비고" aria-label="${escapeHtml(it.item_name)} 비고">`;
-
-    const input = row.querySelector(".br-input");
-    input.value = row.dataset.origValue;
-    row.querySelector(".br-note").value = row.dataset.origNote;
-    input.addEventListener("input", () => {
-      updateBatchBadge(row, it);
-      updateBatchSaveButton();
-    });
-    row.querySelector(".br-note").addEventListener("input", updateBatchSaveButton);
-    // Enter는 저장 대신 다음 항목의 값 입력칸으로 이동
-    input.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      row.nextElementSibling?.querySelector(".br-input").focus();
-    });
-    updateBatchBadge(row, it);
-    box.appendChild(row);
+  const grouped = useCategories();
+  for (const g of groupByCategory(items)) {
+    if (grouped) {
+      const head = document.createElement("div");
+      head.className = "batch-cat-head";
+      head.textContent = g.name;
+      box.appendChild(head);
+    }
+    for (const it of g.items) batchRow(box, it, byItem.get(it.id));
   }
   updateBatchSaveButton();
+}
+
+function batchRow(box, it, old) {
+  const isText = it.value_type === "TEXT";
+  const row = document.createElement("div");
+  row.className = "batch-row";
+  row.dataset.itemId = it.id;
+  row.dataset.existing = old ? "1" : "";
+  row.dataset.origValue = old ? String(isText ? old.value_text : old.value) : "";
+  row.dataset.origNote = old ? old.note : "";
+  const genderTag = it.target_gender !== "ALL"
+    ? `<span class="gender-tag">${GENDER_LABEL[it.target_gender]}</span>` : "";
+  const inputAttrs = isText
+    ? `type="text" placeholder="예: 음성"`
+    : `type="number" step="any" inputmode="decimal"`;
+  row.innerHTML = `
+    <div class="br-name">${escapeHtml(it.item_name)}${genderTag}</div>
+    <div class="br-value">
+      <input class="br-input" ${inputAttrs} aria-label="${escapeHtml(it.item_name)} 값">
+      <span class="unit">${escapeHtml(it.unit)}</span>
+    </div>
+    <div class="br-badge"></div>
+    <input type="text" class="br-note" placeholder="항목별 비고" aria-label="${escapeHtml(it.item_name)} 비고">`;
+
+  const input = row.querySelector(".br-input");
+  input.value = row.dataset.origValue;
+  row.querySelector(".br-note").value = row.dataset.origNote;
+  input.addEventListener("input", () => {
+    updateBatchBadge(row, it);
+    updateBatchSaveButton();
+  });
+  row.querySelector(".br-note").addEventListener("input", updateBatchSaveButton);
+  // Enter는 저장 대신 다음 항목의 값 입력칸으로 이동
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const inputs = [...document.querySelectorAll("#batch-rows .br-input")];
+    inputs[inputs.indexOf(input) + 1]?.focus();
+  });
+  updateBatchBadge(row, it);
+  box.appendChild(row);
 }
 
 function updateBatchBadge(row, it) {
@@ -655,6 +736,10 @@ function openItemForm(item = null) {
   document.getElementById("i-unit").value = item ? item.unit : "";
   document.getElementById("i-vtype").value = item ? item.value_type : "NUMBER";
   document.getElementById("i-gender").value = item ? item.target_gender : "ALL";
+  const catSel = document.getElementById("i-category");
+  catSel.innerHTML = `<option value="">미분류</option>` + categories
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+  catSel.value = item && item.category_id != null ? String(item.category_id) : "";
 
   const rowsBox = document.getElementById("range-rows");
   rowsBox.innerHTML = "";
@@ -745,6 +830,8 @@ document.getElementById("item-form").onsubmit = async (e) => {
     unit: document.getElementById("i-unit").value,
     value_type: valueType,
     target_gender: document.getElementById("i-gender").value,
+    category_id: document.getElementById("i-category").value === "" ? null
+      : Number(document.getElementById("i-category").value),
     ranges,
   });
 
@@ -766,6 +853,60 @@ document.getElementById("item-form").onsubmit = async (e) => {
     renderDashboard();
   }
 };
+
+/* ===== 카테고리 관리 모달 ===== */
+function openCategoryDialog() {
+  renderCategoryList();
+  document.getElementById("c-name").value = "";
+  document.getElementById("cat-dialog").showModal();
+}
+
+function renderCategoryList() {
+  const list = document.getElementById("cat-list");
+  list.innerHTML = "";
+  document.getElementById("cat-empty").hidden = categories.length > 0;
+  for (const c of categories) {
+    const row = document.createElement("div");
+    row.className = "cat-row";
+    row.innerHTML = `
+      <span class="cat-name">${escapeHtml(c.name)}</span>
+      <span class="cat-count">${c.item_count}개 항목</span>
+      <button type="button" class="btn btn-ghost btn-small">이름 변경</button>
+      <button type="button" class="btn btn-ghost btn-small btn-danger">삭제</button>`;
+    const [renameBtn, delBtn] = row.querySelectorAll("button");
+    renameBtn.onclick = async () => {
+      const name = prompt("새 이름", c.name);
+      if (name == null || name.trim() === "" || name.trim() === c.name) return;
+      await api(`/api/categories/${c.id}`, { method: "PUT", body: JSON.stringify({ name }) });
+      await reloadAfterCategoryChange();
+    };
+    delBtn.onclick = async () => {
+      const tail = c.item_count ? ` 소속 항목 ${c.item_count}개는 미분류가 됩니다.` : "";
+      if (!confirm(`'${c.name}' 카테고리를 삭제할까요?${tail}`)) return;
+      await api(`/api/categories/${c.id}`, { method: "DELETE" });
+      await reloadAfterCategoryChange();
+    };
+    list.appendChild(row);
+  }
+}
+
+document.getElementById("cat-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const name = document.getElementById("c-name").value;
+  await api("/api/categories", { method: "POST", body: JSON.stringify({ name }) });
+  document.getElementById("c-name").value = "";
+  await reloadAfterCategoryChange();
+};
+
+/* 카테고리 변경 후: 목록·항목(category_id) 다시 불러오고 모달과 대시보드 갱신 */
+async function reloadAfterCategoryChange() {
+  [items, categories] = await Promise.all([
+    api(`/api/users/${currentUser.id}/summary`),
+    api("/api/categories"),
+  ]);
+  renderCategoryList();
+  renderDashboard();
+}
 
 /* ===== 시작 ===== */
 (async function start() {

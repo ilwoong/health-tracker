@@ -125,6 +125,16 @@ h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 700; }
 .search-row { margin-bottom: 12px; }
 #item-search { width: 100%; }
 
+/* ===== 카테고리 칩 / 섹션 ===== */
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.cat-head {
+  grid-column: 1 / -1;
+  margin: 8px 0 -2px;
+  font-size: 0.78rem; font-weight: 700; color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.cat-head:first-child { margin-top: 0; }
+
 /* ===== 카드 목록 ===== */
 .card-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 @media (min-width: 560px) { .card-grid { grid-template-columns: 1fr 1fr; } }
@@ -262,6 +272,20 @@ dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78r
 .radio { flex-direction: row !important; align-items: center; gap: 6px !important; font-size: 0.9rem !important; color: var(--ink) !important; font-weight: 500 !important; }
 .radio input { width: auto; }
 
+/* ===== 카테고리 관리 모달 ===== */
+.cat-list { display: flex; flex-direction: column; }
+.cat-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 4px; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--line);
+}
+.cat-row:last-child { border-bottom: none; }
+.cat-name { font-weight: 700; font-size: 0.9rem; }
+.cat-count { font-size: 0.75rem; color: var(--muted); margin-right: 6px; }
+.cat-add { display: flex; gap: 6px; align-items: center; }
+.cat-add input { flex: 1; }
+
 /* ===== 판정 구간 편집기 ===== */
 .ranges-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -298,6 +322,12 @@ dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78r
   border-bottom: 1px solid var(--line);
 }
 .batch-row:first-child { padding-top: 0; }
+.batch-cat-head {
+  padding: 14px 0 4px;
+  font-size: 0.75rem; font-weight: 700; color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.batch-cat-head:first-child { padding-top: 0; }
 .batch-row:last-child { border-bottom: none; padding-bottom: 0; }
 @media (min-width: 640px) {
   .batch-row {

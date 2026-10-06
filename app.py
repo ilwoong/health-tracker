@@ -2,7 +2,8 @@
 
 테이블 구조 (spec/design.md의 타입을 SQLite 관례로 매핑: VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLOAT→REAL)
 - users:               사용자 (이름 UNIQUE, 생일, 성별 M/F)
-- checkup_items:       검진 항목 (이름 UNIQUE, 단위, 대상 성별 ALL/M/F)
+- checkup_categories:  검진 항목 카테고리 (이름 UNIQUE)
+- checkup_items:       검진 항목 (이름 UNIQUE, 단위, 대상 성별 ALL/M/F, 카테고리 FK nullable)
 - checkup_item_ranges: 항목별 판정 구간 (정상/경계/위험 등, 항목당 판정 수준별 1개)
 - checkup_results:     사용자별 검진 결과 (UNIQUE(user_id, item_id, date) → 같은 날짜 재입력 시 덮어쓰기)
 """
@@ -47,12 +48,17 @@ def init_db():
             birth_date TEXT NOT NULL,
             gender     TEXT NOT NULL CHECK (gender IN ('M', 'F'))
         );
+        CREATE TABLE IF NOT EXISTS checkup_categories (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );
         CREATE TABLE IF NOT EXISTS checkup_items (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             item_name     TEXT NOT NULL,
             unit          TEXT NOT NULL DEFAULT '',
             value_type    TEXT NOT NULL DEFAULT 'NUMBER' CHECK (value_type IN ('NUMBER', 'TEXT')),
             target_gender TEXT NOT NULL DEFAULT 'ALL' CHECK (target_gender IN ('ALL', 'M', 'F')),
+            category_id   INTEGER REFERENCES checkup_categories(id) ON DELETE SET NULL,  -- NULL이면 미분류
             UNIQUE (item_name, target_gender)
         );
         CREATE TABLE IF NOT EXISTS checkup_item_ranges (
@@ -79,6 +85,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_results_user_item_date
             ON checkup_results (user_id, item_id, date);
         """)
+        # 마이그레이션: category_id 도입(spec/001) 이전에 만든 DB에 컬럼 추가
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(checkup_items)")]
+        if "category_id" not in cols:
+            conn.execute("""ALTER TABLE checkup_items ADD COLUMN category_id INTEGER
+                            REFERENCES checkup_categories(id) ON DELETE SET NULL""")
 
 
 init_db()
@@ -113,6 +124,20 @@ class UserIn(BaseModel):
         return _valid_iso(v, "생일")
 
 
+class CategoryIn(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def name_valid(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("카테고리 이름을 입력하세요")
+        if v == "미분류":
+            raise ValueError("'미분류'는 카테고리 이름으로 쓸 수 없습니다")
+        return v
+
+
 class RangeIn(BaseModel):
     min_value: float | None = None
     max_value: float | None = None
@@ -133,6 +158,7 @@ class ItemIn(BaseModel):
     unit: str = ""
     value_type: Literal["NUMBER", "TEXT"] = "NUMBER"
     target_gender: Literal["ALL", "M", "F"] = "ALL"
+    category_id: int | None = None   # None이면 미분류
     ranges: list[RangeIn] = []
 
     @field_validator("item_name")
@@ -248,6 +274,13 @@ def _check_item_name_rule(conn, name: str, gender: str, exclude_id: int | None =
         raise HTTPException(409, f"같은 이름·같은 대상 성별의 '{name}' 항목이 이미 있습니다")
 
 
+def _check_category_exists(conn, category_id: int | None):
+    if category_id is None:
+        return
+    if not conn.execute("SELECT 1 FROM checkup_categories WHERE id = ?", (category_id,)).fetchone():
+        raise HTTPException(422, "존재하지 않는 카테고리입니다")
+
+
 def _item_with_ranges(conn, item_row) -> dict:
     ranges = conn.execute(
         """SELECT id, min_value, max_value, judgement_level, color
@@ -303,6 +336,61 @@ def delete_user(user_id: int):
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
+# ---------- 카테고리 API ----------
+
+def _category_row(conn, category_id: int) -> dict:
+    row = conn.execute(
+        """SELECT c.id, c.name,
+                  (SELECT COUNT(*) FROM checkup_items WHERE category_id = c.id) AS item_count
+             FROM checkup_categories c WHERE c.id = ?""",
+        (category_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "카테고리를 찾을 수 없습니다")
+    return dict(row)
+
+
+@app.get("/api/categories")
+def list_categories():
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT c.id, c.name,
+                      (SELECT COUNT(*) FROM checkup_items WHERE category_id = c.id) AS item_count
+                 FROM checkup_categories c
+                ORDER BY c.name COLLATE NOCASE, c.id"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/categories", status_code=201)
+def create_category(body: CategoryIn):
+    with db() as conn:
+        try:
+            cur = conn.execute("INSERT INTO checkup_categories (name) VALUES (?)", (body.name,))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "같은 이름의 카테고리가 있습니다")
+        return _category_row(conn, cur.lastrowid)
+
+
+@app.put("/api/categories/{category_id}")
+def update_category(category_id: int, body: CategoryIn):
+    with db() as conn:
+        _category_row(conn, category_id)
+        try:
+            conn.execute("UPDATE checkup_categories SET name = ? WHERE id = ?", (body.name, category_id))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "같은 이름의 카테고리가 있습니다")
+        return _category_row(conn, category_id)
+
+
+@app.delete("/api/categories/{category_id}", status_code=204)
+def delete_category(category_id: int):
+    """소속 항목은 ON DELETE SET NULL로 미분류가 된다."""
+    with db() as conn:
+        _category_row(conn, category_id)
+        conn.execute("DELETE FROM checkup_categories WHERE id = ?", (category_id,))
+
+
 # ---------- 검진 항목 API ----------
 
 @app.get("/api/items")
@@ -323,11 +411,12 @@ def list_items(gender: Literal["M", "F"] | None = None):
 def create_item(body: ItemIn):
     with db() as conn:
         _check_item_name_rule(conn, body.item_name, body.target_gender)
+        _check_category_exists(conn, body.category_id)
         try:
             cur = conn.execute(
-                """INSERT INTO checkup_items (item_name, unit, value_type, target_gender)
-                   VALUES (?, ?, ?, ?)""",
-                (body.item_name, body.unit.strip(), body.value_type, body.target_gender),
+                """INSERT INTO checkup_items (item_name, unit, value_type, target_gender, category_id)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (body.item_name, body.unit.strip(), body.value_type, body.target_gender, body.category_id),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, "같은 이름·같은 대상 성별의 검진 항목이 있습니다")
@@ -348,6 +437,7 @@ def update_item(item_id: int, body: ItemIn):
     with db() as conn:
         item = _get_or_404(conn, "checkup_items", item_id, "검진 항목")
         _check_item_name_rule(conn, body.item_name, body.target_gender, exclude_id=item_id)
+        _check_category_exists(conn, body.category_id)
         if item["value_type"] != body.value_type:
             has_results = conn.execute(
                 "SELECT 1 FROM checkup_results WHERE item_id = ? LIMIT 1", (item_id,)
@@ -357,9 +447,10 @@ def update_item(item_id: int, body: ItemIn):
         try:
             conn.execute(
                 """UPDATE checkup_items
-                      SET item_name = ?, unit = ?, value_type = ?, target_gender = ?
+                      SET item_name = ?, unit = ?, value_type = ?, target_gender = ?, category_id = ?
                     WHERE id = ?""",
-                (body.item_name, body.unit.strip(), body.value_type, body.target_gender, item_id),
+                (body.item_name, body.unit.strip(), body.value_type, body.target_gender,
+                 body.category_id, item_id),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, "같은 이름·같은 대상 성별의 검진 항목이 있습니다")

@@ -40,6 +40,7 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-ghost" onclick="logout()">사용자 전환</button>
+      <button class="btn btn-ghost" onclick="openCategoryDialog()">카테고리 관리</button>
       <button class="btn btn-ghost" onclick="showBatch()">일괄 입력</button>
       <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
     </div>
@@ -48,6 +49,7 @@
   <div class="search-row">
     <input type="search" id="item-search" placeholder="검진 항목 검색" oninput="renderDashboard()">
   </div>
+  <div id="cat-chips" class="cat-chips" hidden></div>
 
   <section id="item-cards" class="card-grid"></section>
 
@@ -176,13 +178,18 @@
         </select>
       </label>
     </div>
-    <label>대상 성별
-      <select id="i-gender">
-        <option value="ALL">전체</option>
-        <option value="M">남성만</option>
-        <option value="F">여성만</option>
-      </select>
-    </label>
+    <div class="two-col">
+      <label>대상 성별
+        <select id="i-gender">
+          <option value="ALL">전체</option>
+          <option value="M">남성만</option>
+          <option value="F">여성만</option>
+        </select>
+      </label>
+      <label>카테고리
+        <select id="i-category"></select>
+      </label>
+    </div>
 
     <div id="ranges-section">
       <div class="ranges-head">
@@ -197,6 +204,23 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('item-dialog').close()">취소</button>
       <button type="submit" class="btn btn-primary">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 카테고리 관리 모달 ===== -->
+<dialog id="cat-dialog">
+  <form id="cat-form">
+    <h2>카테고리 관리</h2>
+    <p class="hint">카테고리를 삭제해도 항목은 삭제되지 않고 '미분류'가 됩니다.</p>
+    <div id="cat-list" class="cat-list"></div>
+    <p id="cat-empty" class="empty-sub" hidden>아직 카테고리가 없습니다.</p>
+    <div class="cat-add">
+      <input type="text" id="c-name" placeholder="새 카테고리 이름 (예: 혈액)" required>
+      <button type="submit" class="btn btn-primary btn-small">추가</button>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('cat-dialog').close()">닫기</button>
     </div>
   </form>
 </dialog>
