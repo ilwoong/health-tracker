@@ -854,6 +854,15 @@ document.getElementById("item-form").onsubmit = async (e) => {
   }
 };
 
+/* ===== 설정 메뉴 (카테고리 관리 · 순서 편집) ===== */
+function closeSettingsMenu() {
+  document.getElementById("settings-menu").removeAttribute("open");
+}
+// 메뉴 바깥을 누르면 닫기
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#settings-menu")) closeSettingsMenu();
+});
+
 /* ===== 카테고리 관리 모달 ===== */
 function openCategoryDialog() {
   renderCategoryList();

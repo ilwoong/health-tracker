@@ -125,6 +125,28 @@ h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 700; }
 .search-row { margin-bottom: 12px; }
 #item-search { width: 100%; }
 
+/* ===== 설정 메뉴 ===== */
+.menu { position: relative; }
+.menu summary { list-style: none; display: inline-block; }
+.menu summary::-webkit-details-marker { display: none; }
+.menu[open] summary { background: var(--accent-soft); }
+.menu-list {
+  position: absolute; right: 0; top: calc(100% + 4px);
+  min-width: 150px; padding: 6px;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(26, 46, 43, 0.15);
+  z-index: 10;
+}
+.menu-list button {
+  background: none; border: none; cursor: pointer;
+  text-align: left; padding: 9px 12px; border-radius: 8px;
+  font-family: inherit; font-size: 0.875rem; font-weight: 600; color: var(--ink);
+}
+.menu-list button:hover { background: var(--accent-soft); }
+
 /* ===== 카테고리 칩 / 섹션 ===== */
 .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .cat-head {

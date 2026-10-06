@@ -40,9 +40,14 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-ghost" onclick="logout()">사용자 전환</button>
-      <button class="btn btn-ghost" onclick="openCategoryDialog()">카테고리 관리</button>
-      <button class="btn btn-ghost" onclick="openOrderDialog()">순서 편집</button>
       <button class="btn btn-ghost" onclick="showBatch()">일괄 입력</button>
+      <details class="menu" id="settings-menu">
+        <summary class="btn btn-ghost">설정 &#9662;</summary>
+        <div class="menu-list">
+          <button type="button" onclick="closeSettingsMenu(); openCategoryDialog()">카테고리 관리</button>
+          <button type="button" onclick="closeSettingsMenu(); openOrderDialog()">순서 편집</button>
+        </div>
+      </details>
       <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
     </div>
   </header>
