@@ -87,7 +87,7 @@ function badgeHtml(range) {
 
 /* ===== 화면 전환 ===== */
 function show(viewId) {
-  for (const id of ["view-login", "view-dashboard", "view-detail"]) {
+  for (const id of ["view-login", "view-dashboard", "view-detail", "view-batch"]) {
     document.getElementById(id).hidden = id !== viewId;
   }
 }
@@ -465,6 +465,149 @@ document.getElementById("result-form").onsubmit = async (e) => {
   document.getElementById("r-value").value = "";
   document.getElementById("r-note").value = "";
   refreshResults();
+};
+
+/* ===== 검진 결과 일괄 입력 ===== */
+let batchDate = null;   // 기존 값을 불러온 날짜 (날짜 변경 취소 시 되돌릴 값)
+
+async function showBatch() {
+  show("view-batch");
+  document.getElementById("b-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("b-note").value = "";
+  await loadBatchRows();
+}
+
+/* 항목별 입력 줄을 만들고, 선택한 날짜의 기존 기록을 미리 채운다 */
+async function loadBatchRows() {
+  batchDate = document.getElementById("b-date").value;
+  const existing = batchDate
+    ? await api(`/api/users/${currentUser.id}/results?date=${batchDate}`)
+    : [];
+  const byItem = new Map(existing.map((r) => [r.item_id, r]));
+
+  const box = document.getElementById("batch-rows");
+  box.innerHTML = "";
+  document.getElementById("batch-empty").hidden = items.length > 0;
+
+  for (const it of items) {
+    const isText = it.value_type === "TEXT";
+    const old = byItem.get(it.id);
+    const row = document.createElement("div");
+    row.className = "batch-row";
+    row.dataset.itemId = it.id;
+    row.dataset.existing = old ? "1" : "";
+    row.dataset.origValue = old ? String(isText ? old.value_text : old.value) : "";
+    row.dataset.origNote = old ? old.note : "";
+    const genderTag = it.target_gender !== "ALL"
+      ? `<span class="gender-tag">${GENDER_LABEL[it.target_gender]}</span>` : "";
+    const inputAttrs = isText
+      ? `type="text" placeholder="예: 음성"`
+      : `type="number" step="any" inputmode="decimal"`;
+    row.innerHTML = `
+      <div class="br-name">${escapeHtml(it.item_name)}${genderTag}</div>
+      <div class="br-value">
+        <input class="br-input" ${inputAttrs} aria-label="${escapeHtml(it.item_name)} 값">
+        <span class="unit">${escapeHtml(it.unit)}</span>
+      </div>
+      <div class="br-badge"></div>
+      <input type="text" class="br-note" placeholder="항목별 비고" aria-label="${escapeHtml(it.item_name)} 비고">`;
+
+    const input = row.querySelector(".br-input");
+    input.value = row.dataset.origValue;
+    row.querySelector(".br-note").value = row.dataset.origNote;
+    input.addEventListener("input", () => {
+      updateBatchBadge(row, it);
+      updateBatchSaveButton();
+    });
+    row.querySelector(".br-note").addEventListener("input", updateBatchSaveButton);
+    // Enter는 저장 대신 다음 항목의 값 입력칸으로 이동
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      row.nextElementSibling?.querySelector(".br-input").focus();
+    });
+    updateBatchBadge(row, it);
+    box.appendChild(row);
+  }
+  updateBatchSaveButton();
+}
+
+function updateBatchBadge(row, it) {
+  const raw = row.querySelector(".br-input").value;
+  const matched = it.value_type === "TEXT" || raw === "" ? null : judgeRange(parseFloat(raw), it.ranges);
+  row.querySelector(".br-badge").innerHTML = badgeHtml(matched);
+}
+
+function batchRowValues(row) {
+  return {
+    value: row.querySelector(".br-input").value.trim(),
+    note: row.querySelector(".br-note").value.trim(),
+  };
+}
+
+/* 저장 대상: 값이 있고, 기존 기록이 없거나 값/항목별 비고가 바뀐 줄 */
+function isBatchRowToSave(row) {
+  const { value, note } = batchRowValues(row);
+  if (value === "") return false;
+  return !row.dataset.existing || value !== row.dataset.origValue || note !== row.dataset.origNote;
+}
+
+/* 날짜 변경·화면 이탈 시 확인용: 불러온 상태에서 하나라도 바뀌었는지 */
+function batchHasEdits() {
+  return [...document.querySelectorAll("#batch-rows .batch-row")].some((row) => {
+    const { value, note } = batchRowValues(row);
+    return value !== row.dataset.origValue || note !== row.dataset.origNote;
+  });
+}
+
+function updateBatchSaveButton() {
+  const count = [...document.querySelectorAll("#batch-rows .batch-row")].filter(isBatchRowToSave).length;
+  const btn = document.getElementById("b-save");
+  btn.disabled = count === 0;
+  btn.textContent = count ? `${count}개 항목 저장` : "저장";
+}
+
+async function onBatchDateChange() {
+  const dateInput = document.getElementById("b-date");
+  if (batchHasEdits() && !confirm("입력 중인 값이 있습니다. 날짜를 바꾸면 입력한 값이 사라집니다. 계속할까요?")) {
+    dateInput.value = batchDate;
+    return;
+  }
+  await loadBatchRows();
+}
+
+function leaveBatch() {
+  if (batchHasEdits() && !confirm("입력한 값이 저장되지 않았습니다. 나갈까요?")) return;
+  showDashboard();
+}
+
+document.getElementById("batch-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const commonNote = document.getElementById("b-note").value.trim();
+  const entries = [];
+  for (const row of document.querySelectorAll("#batch-rows .batch-row")) {
+    if (!isBatchRowToSave(row)) continue;
+    const it = items.find((i) => i.id === Number(row.dataset.itemId));
+    const { value, note } = batchRowValues(row);
+    const entry = { item_id: it.id, note: note || commonNote };
+    if (it.value_type === "TEXT") entry.value_text = value;
+    else entry.value = parseFloat(value);
+    entries.push(entry);
+  }
+  if (!entries.length) return;
+
+  const btn = document.getElementById("b-save");
+  btn.disabled = true;
+  try {
+    await api(`/api/users/${currentUser.id}/results/batch`, {
+      method: "POST",
+      body: JSON.stringify({ date: document.getElementById("b-date").value, entries }),
+    });
+  } catch {
+    updateBatchSaveButton();
+    return;
+  }
+  showDashboard();
 };
 
 /* ===== 사용자 추가/수정 모달 ===== */

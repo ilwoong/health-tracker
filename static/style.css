@@ -55,7 +55,7 @@ h1 { margin: 2px 0 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01
 h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 700; }
 .sub { margin: 2px 0 0; font-size: 0.82rem; color: var(--muted); }
 
-.header-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .detail-header { align-items: center; flex-wrap: wrap; }
 .detail-title { flex: 1; min-width: 150px; }
 .detail-title h1 { font-size: 1.25rem; }
@@ -283,6 +283,43 @@ dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78r
 .rr-color.color-danger { color: var(--lv-danger); background: var(--lv-danger-bg); }
 .rr-color.color-lowish { color: var(--lv-lowish); background: var(--lv-lowish-bg); }
 .rr-color.color-etc    { color: var(--lv-etc);    background: var(--lv-etc-bg); }
+
+/* ===== 일괄 입력 ===== */
+.batch-hint { margin: 10px 0 0; }
+.batch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) 5.5em;
+  grid-template-areas:
+    "name value badge"
+    "note note  note";
+  gap: 6px 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.batch-row:first-child { padding-top: 0; }
+.batch-row:last-child { border-bottom: none; padding-bottom: 0; }
+@media (min-width: 640px) {
+  .batch-row {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 5.5em minmax(0, 1fr);
+    grid-template-areas: "name value badge note";
+  }
+}
+.br-name { grid-area: name; font-weight: 700; font-size: 0.9rem; }
+.br-value { grid-area: value; display: flex; align-items: center; gap: 6px; }
+.br-value input { flex: 1; width: 100%; padding: 7px 9px; }
+.br-value .unit { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+.br-badge { grid-area: badge; }
+.br-badge .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.br-note { grid-area: note; padding: 6px 9px; font-size: 0.82rem; }
+.batch-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+.btn:disabled { opacity: 0.45; cursor: default; filter: none; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

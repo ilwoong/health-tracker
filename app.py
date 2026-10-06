@@ -163,16 +163,10 @@ class ItemIn(BaseModel):
         return self
 
 
-class ResultIn(BaseModel):
-    date: str
+class ResultValueIn(BaseModel):
     value: float | None = None       # 숫자형 항목용
     value_text: str | None = None    # 문자형 항목용
     note: str = ""
-
-    @field_validator("date")
-    @classmethod
-    def date_valid(cls, v):
-        return _valid_iso(v, "날짜")
 
     @field_validator("value_text")
     @classmethod
@@ -185,6 +179,38 @@ class ResultIn(BaseModel):
     def exactly_one_value(self):
         if (self.value is None) == (self.value_text is None):
             raise ValueError("value(숫자) 또는 value_text(문자) 중 하나만 입력해야 합니다")
+        return self
+
+
+class ResultIn(ResultValueIn):
+    date: str
+
+    @field_validator("date")
+    @classmethod
+    def date_valid(cls, v):
+        return _valid_iso(v, "날짜")
+
+
+class BatchEntryIn(ResultValueIn):
+    item_id: int
+
+
+class BatchResultIn(BaseModel):
+    date: str
+    entries: list[BatchEntryIn]
+
+    @field_validator("date")
+    @classmethod
+    def date_valid(cls, v):
+        return _valid_iso(v, "날짜")
+
+    @model_validator(mode="after")
+    def entries_valid(self):
+        if not self.entries:
+            raise ValueError("저장할 항목이 없습니다")
+        ids = [e.item_id for e in self.entries]
+        if len(ids) != len(set(ids)):
+            raise ValueError("같은 항목이 중복되었습니다")
         return self
 
 
@@ -405,30 +431,63 @@ def list_results(user_id: int, item_id: int,
         return [dict(r) for r in rows]
 
 
+def _upsert_result(conn, user_id: int, item, day: str, body: ResultValueIn) -> dict:
+    """같은 (사용자, 항목, 날짜)에 값이 있으면 덮어쓴다. 항목의 값 유형과 일치해야 한다."""
+    name = item["item_name"]
+    if item["value_type"] == "NUMBER" and body.value is None:
+        raise HTTPException(422, f"'{name}'은(는) 숫자형 항목입니다. value에 숫자를 입력하세요")
+    if item["value_type"] == "TEXT" and body.value_text is None:
+        raise HTTPException(422, f"'{name}'은(는) 문자형 항목입니다. value_text에 문자열을 입력하세요")
+    conn.execute(
+        """INSERT INTO checkup_results (user_id, item_id, date, value, value_text, note)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, item_id, date)
+           DO UPDATE SET value = excluded.value,
+                         value_text = excluded.value_text,
+                         note = excluded.note""",
+        (user_id, item["id"], day, body.value, body.value_text, body.note.strip()),
+    )
+    row = conn.execute(
+        "SELECT * FROM checkup_results WHERE user_id = ? AND item_id = ? AND date = ?",
+        (user_id, item["id"], day),
+    ).fetchone()
+    return dict(row)
+
+
 @app.post("/api/users/{user_id}/items/{item_id}/results", status_code=201)
 def upsert_result(user_id: int, item_id: int, body: ResultIn):
-    """같은 (사용자, 항목, 날짜)에 값이 있으면 덮어쓴다. 항목의 값 유형과 일치해야 한다."""
     with db() as conn:
         _get_or_404(conn, "users", user_id, "사용자")
         item = _get_or_404(conn, "checkup_items", item_id, "검진 항목")
-        if item["value_type"] == "NUMBER" and body.value is None:
-            raise HTTPException(422, "숫자형 항목입니다. value에 숫자를 입력하세요")
-        if item["value_type"] == "TEXT" and body.value_text is None:
-            raise HTTPException(422, "문자형 항목입니다. value_text에 문자열을 입력하세요")
-        conn.execute(
-            """INSERT INTO checkup_results (user_id, item_id, date, value, value_text, note)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT (user_id, item_id, date)
-               DO UPDATE SET value = excluded.value,
-                             value_text = excluded.value_text,
-                             note = excluded.note""",
-            (user_id, item_id, body.date, body.value, body.value_text, body.note.strip()),
-        )
-        row = conn.execute(
-            "SELECT * FROM checkup_results WHERE user_id = ? AND item_id = ? AND date = ?",
-            (user_id, item_id, body.date),
-        ).fetchone()
-        return dict(row)
+        return _upsert_result(conn, user_id, item, body.date, body)
+
+
+@app.get("/api/users/{user_id}/results")
+def list_results_by_date(user_id: int, date: str):
+    """특정 날짜에 기록된 모든 항목의 결과 (일괄 입력 화면의 기존 값 채우기용)."""
+    try:
+        _valid_iso(date, "날짜")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    with db() as conn:
+        _get_or_404(conn, "users", user_id, "사용자")
+        rows = conn.execute(
+            "SELECT * FROM checkup_results WHERE user_id = ? AND date = ? ORDER BY item_id",
+            (user_id, date),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/users/{user_id}/results/batch", status_code=201)
+def upsert_results_batch(user_id: int, body: BatchResultIn):
+    """같은 날짜의 여러 항목 결과를 한 트랜잭션으로 저장. 하나라도 실패하면 전체 취소."""
+    with db() as conn:
+        _get_or_404(conn, "users", user_id, "사용자")
+        saved = []
+        for entry in body.entries:
+            item = _get_or_404(conn, "checkup_items", entry.item_id, "검진 항목")
+            saved.append(_upsert_result(conn, user_id, item, body.date, entry))
+        return saved
 
 
 @app.delete("/api/results/{result_id}", status_code=204)

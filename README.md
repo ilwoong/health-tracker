@@ -26,6 +26,10 @@ Raspberry Pi 5 + Docker 환경을 대상으로 하며, PC/모바일 브라우저
 - 상세: Chart.js 선 그래프(판정 구간을 색상 밴드로 표시) + 기록 표
   - 조회 기간 설정: 전체 / 최근 1·3·5년 프리셋 + 사용자 지정 기간
 - 결과 입력: 과거 날짜 소급 입력 가능(항상 날짜순 정렬), 같은 날짜 재입력 시 덮어쓰기
+- 일괄 입력: 날짜 하나에 여러 항목 결과를 한 화면에서 입력 (종합검진 등)
+  - 그 날짜의 기존 기록을 미리 채움, 값을 입력/변경한 항목만 저장
+  - 공통 비고 + 항목별 비고 (항목별 비고가 비어 있으면 공통 비고 저장)
+  - 하나라도 실패하면 전체 저장 취소
 
 ## 배포 (Raspberry Pi 5, Docker)
 ```bash
@@ -77,6 +81,9 @@ SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLO
 - `GET /api/users/{uid}/items/{iid}/results[?date_from=&date_to=]` — 날짜 오름차순
 - `POST /api/users/{uid}/items/{iid}/results` — 같은 날짜면 upsert
   - body: `{date, value | value_text, note}` — 항목의 값 유형에 맞는 필드 하나만 입력
+- `GET /api/users/{uid}/results?date=YYYY-MM-DD` — 특정 날짜의 모든 항목 결과
+- `POST /api/users/{uid}/results/batch` — 일괄 저장 (한 트랜잭션)
+  - body: `{date, entries: [{item_id, value | value_text, note}]}` — entry별 규칙은 단건 입력과 동일
 - `DELETE /api/results/{id}`
 
 ## 보안 참고

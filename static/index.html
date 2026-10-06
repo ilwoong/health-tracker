@@ -40,6 +40,7 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-ghost" onclick="logout()">사용자 전환</button>
+      <button class="btn btn-ghost" onclick="showBatch()">일괄 입력</button>
       <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
     </div>
   </header>
@@ -108,6 +109,38 @@
     </table>
     <p id="history-empty" class="empty-sub" hidden>선택한 기간에 기록이 없습니다.</p>
   </section>
+</main>
+
+<!-- ===== 검진 결과 일괄 입력 화면 ===== -->
+<main id="view-batch" class="view" hidden>
+  <header class="app-header detail-header">
+    <button class="btn btn-ghost" onclick="leaveBatch()">&larr; 목록</button>
+    <div class="detail-title">
+      <h1>검진 결과 일괄 입력</h1>
+      <p class="range-caption">같은 날짜의 여러 항목을 한 번에 기록합니다.</p>
+    </div>
+  </header>
+
+  <form id="batch-form">
+    <section class="panel">
+      <div class="row-form">
+        <label>날짜 <input type="date" id="b-date" required onchange="onBatchDateChange()"></label>
+        <label class="grow">공통 비고 <input type="text" id="b-note" placeholder="예: 국가건강검진"></label>
+      </div>
+      <p class="hint batch-hint">값을 입력한 항목만 저장합니다. 그 날짜에 이미 있는 기록은 미리 채워지며, 값을 지워도 기록은 삭제되지 않습니다.
+        항목별 비고를 비워 두면 공통 비고가 저장됩니다.</p>
+    </section>
+
+    <section class="panel">
+      <div id="batch-rows"></div>
+      <p id="batch-empty" class="empty-sub" hidden>등록된 검진 항목이 없습니다. 대시보드에서 항목을 먼저 추가하세요.</p>
+    </section>
+
+    <div class="batch-actions">
+      <button type="button" class="btn btn-ghost" onclick="leaveBatch()">취소</button>
+      <button type="submit" id="b-save" class="btn btn-primary" disabled>저장</button>
+    </div>
+  </form>
 </main>
 
 <!-- ===== 사용자 추가/수정 모달 ===== -->
