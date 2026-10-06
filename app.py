@@ -15,11 +15,12 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
+GENDER_LABEL = {"M": "남", "F": "여"}
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "health.db"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -507,6 +508,65 @@ def delete_item(item_id: int):
     with db() as conn:
         _get_or_404(conn, "checkup_items", item_id, "검진 항목")
         conn.execute("DELETE FROM checkup_items WHERE id = ?", (item_id,))
+
+
+# ---------- 검진 항목 합치기 (spec/005) ----------
+
+class MergeIn(BaseModel):
+    from_id: int
+
+
+def _merge_preview(conn, keep_id: int, from_id: int) -> dict:
+    if keep_id == from_id:
+        raise HTTPException(422, "같은 항목끼리는 합칠 수 없습니다")
+    keep = _get_or_404(conn, "checkup_items", keep_id, "남길 항목")
+    src = _get_or_404(conn, "checkup_items", from_id, "합칠 항목")
+    if keep["value_type"] != src["value_type"]:
+        raise HTTPException(422, "값 유형(숫자/문자)이 같은 항목끼리만 합칠 수 있습니다")
+    total, users = conn.execute(
+        "SELECT COUNT(*), COUNT(DISTINCT user_id) FROM checkup_results WHERE item_id = ?", (from_id,)).fetchone()
+    dropped = conn.execute(
+        """SELECT COUNT(*) FROM checkup_results s
+            WHERE s.item_id = ? AND EXISTS (SELECT 1 FROM checkup_results k
+                                            WHERE k.item_id = ? AND k.user_id = s.user_id AND k.date = s.date)""",
+        (from_id, keep_id)).fetchone()[0]
+    warnings, blocked = [], []
+    if keep["unit"].strip() != src["unit"].strip():
+        warnings.append(f"단위가 다릅니다: '{keep['unit']}' vs '{src['unit']}'. 값은 환산 없이 그대로 옮겨집니다")
+    if conn.execute("SELECT 1 FROM checkup_item_ranges WHERE item_id = ? LIMIT 1", (from_id,)).fetchone():
+        warnings.append("합칠 항목의 판정 구간은 버려지고 남길 항목의 구간을 씁니다")
+    if keep["target_gender"] != "ALL":
+        hidden = [r["name"] for r in conn.execute(
+            """SELECT DISTINCT u.name FROM checkup_results r JOIN users u ON u.id = r.user_id
+                WHERE r.item_id = ? AND u.gender != ? ORDER BY u.name""", (from_id, keep["target_gender"]))]
+        if hidden:
+            blocked.append(f"남길 항목이 {GENDER_LABEL[keep['target_gender']]}성 전용이라 "
+                           f"{', '.join(hidden)}의 기록이 가려집니다. 남길 항목의 대상 성별을 '전체'로 바꾼 뒤 다시 하세요")
+    return {"moved": total - dropped, "dropped": dropped, "users": users, "warnings": warnings, "blocked": blocked}
+
+
+@app.get("/api/items/{keep_id}/merge-preview")
+def merge_preview(keep_id: int, from_: int = Query(alias="from")):
+    with db() as conn:
+        return _merge_preview(conn, keep_id, from_)
+
+
+@app.post("/api/items/{keep_id}/merge")
+def merge_items(keep_id: int, body: MergeIn):
+    """합칠 항목의 기록을 남길 항목으로 옮기고 합칠 항목을 삭제한다. 충돌 기록은 남길 항목 값을 유지."""
+    with db() as conn:
+        preview = _merge_preview(conn, keep_id, body.from_id)
+        if preview["blocked"]:
+            raise HTTPException(422, " ".join(preview["blocked"]))
+        conn.execute(
+            """DELETE FROM checkup_results
+                WHERE item_id = ? AND EXISTS (SELECT 1 FROM checkup_results k
+                                              WHERE k.item_id = ? AND k.user_id = checkup_results.user_id
+                                                AND k.date = checkup_results.date)""",
+            (body.from_id, keep_id))
+        conn.execute("UPDATE checkup_results SET item_id = ? WHERE item_id = ?", (keep_id, body.from_id))
+        conn.execute("DELETE FROM checkup_items WHERE id = ?", (body.from_id,))   # 기록을 옮긴 뒤에 삭제 (CASCADE 주의)
+        return {"moved": preview["moved"], "dropped": preview["dropped"]}
 
 
 # ---------- 대시보드 요약 API ----------

@@ -898,6 +898,55 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest("#settings-menu")) closeSettingsMenu();
 });
 
+/* ===== 항목 합치기 모달 (상세 화면: 현재 항목이 남길 항목) ===== */
+async function openMergeDialog() {
+  const all = await api("/api/items");   // 성별로 숨겨진 항목도 후보 (항목은 공유)
+  const candidates = all.filter((i) => i.id !== currentItem.id && i.value_type === currentItem.value_type);
+  document.getElementById("m-keep").value = currentItem.item_name;
+  const sel = document.getElementById("m-from");
+  sel.innerHTML = `<option value="">선택하세요</option>` + candidates.map((i) => {
+    const tag = i.target_gender !== "ALL" ? ` (${GENDER_LABEL[i.target_gender]}성 전용)` : "";
+    return `<option value="${i.id}">${escapeHtml(i.item_name)}${tag}</option>`;
+  }).join("");
+  sel.disabled = candidates.length === 0;
+  document.getElementById("m-none").hidden = candidates.length > 0;
+  const box = document.getElementById("m-preview");
+  box.hidden = true; box.innerHTML = "";
+  document.getElementById("m-submit").disabled = true;
+  document.getElementById("merge-dialog").showModal();
+}
+
+async function loadMergePreview() {
+  const fromId = document.getElementById("m-from").value;
+  const box = document.getElementById("m-preview");
+  const btn = document.getElementById("m-submit");
+  btn.disabled = true;
+  if (!fromId) { box.hidden = true; return; }
+  const p = await api(`/api/items/${currentItem.id}/merge-preview?from=${fromId}`);
+  const fromName = document.getElementById("m-from").selectedOptions[0].textContent;
+  const lines = [`옮겨질 기록 ${p.moved}건 (사용자 ${p.users}명)`];
+  if (p.dropped) lines.push(`같은 날짜 충돌 ${p.dropped}건 → 남길 항목 값을 유지하고 버려집니다`);
+  for (const w of p.warnings) lines.push(`⚠ ${w}`);
+  for (const b of p.blocked) lines.push(`✕ ${b}`);
+  lines.push(`'${fromName}' 항목은 삭제됩니다`);
+  box.className = p.blocked.length ? "import-result error" : "import-result";
+  box.innerHTML = lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("");
+  box.hidden = false;
+  btn.disabled = p.blocked.length > 0;
+}
+
+document.getElementById("merge-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const fromId = Number(document.getElementById("m-from").value);
+  if (!fromId) return;
+  await api(`/api/items/${currentItem.id}/merge`, { method: "POST", body: JSON.stringify({ from_id: fromId }) });
+  document.getElementById("merge-dialog").close();
+  await reloadItemsAndCategories();
+  currentItem = items.find((i) => i.id === currentItem.id);
+  renderDetailHeader();
+  refreshResults();
+};
+
 /* ===== 카테고리 관리 모달 ===== */
 function openCategoryDialog() {
   renderCategoryList();

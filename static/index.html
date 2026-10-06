@@ -77,6 +77,7 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-ghost" onclick="editCurrentItem()">수정</button>
+      <button class="btn btn-ghost" onclick="openMergeDialog()">합치기</button>
       <button class="btn btn-ghost btn-danger" onclick="deleteCurrentItem()">삭제</button>
     </div>
   </header>
@@ -241,6 +242,24 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('order-dialog').close()">취소</button>
       <button type="submit" class="btn btn-primary">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 항목 합치기 모달 ===== -->
+<dialog id="merge-dialog">
+  <form id="merge-form">
+    <h2>항목 합치기</h2>
+    <p class="hint">합칠 항목의 모든 사용자 기록을 남길 항목으로 옮기고, 합칠 항목은 삭제합니다. 단위·판정 구간·카테고리는 남길 항목 것을 씁니다.</p>
+    <label>남길 항목 <input type="text" id="m-keep" readonly></label>
+    <label>합칠 항목
+      <select id="m-from" onchange="loadMergePreview()"></select>
+    </label>
+    <p id="m-none" class="empty-sub" hidden>값 유형이 같은 다른 항목이 없습니다.</p>
+    <div id="m-preview" class="import-result" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('merge-dialog').close()">취소</button>
+      <button type="submit" id="m-submit" class="btn btn-primary" disabled>합치기</button>
     </div>
   </form>
 </dialog>
