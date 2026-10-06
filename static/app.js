@@ -982,6 +982,106 @@ document.getElementById("order-form").onsubmit = async (e) => {
   await reloadItemsAndCategories();
 };
 
+/* ===== CSV 가져오기 모달 ===== */
+const IMPORT_KINDS = {
+  categories: {
+    hint: "열: name. 한 줄에 카테고리 하나.",
+    template: "name\n혈액\n간기능\n",
+    path: () => "/api/import/categories",
+    summary: (r) => `카테고리 ${r.created}건 추가, ${r.updated}건은 이미 있음`,
+  },
+  items: {
+    hint: "열: item_name, category, unit, value_type(NUMBER/TEXT), target_gender(ALL/M/F), judgement_level, min_value, max_value, color. "
+        + "판정 구간 하나당 한 줄이며 항목 정보는 반복합니다. 문자형 항목은 구간 열을 비웁니다. 없는 카테고리는 자동으로 만듭니다.",
+    template: "item_name,category,unit,value_type,target_gender,judgement_level,min_value,max_value,color\n"
+        + "AST,간기능,U/L,NUMBER,ALL,정상,0,40,ok\n"
+        + "AST,간기능,U/L,NUMBER,ALL,위험,41,,danger\n"
+        + "요잠혈,소변,,TEXT,ALL,,,,\n",
+    path: () => "/api/import/items",
+    summary: (r) => `항목 ${r.created}건 추가, ${r.updated}건 갱신`
+        + (r.categories_created ? ` · 카테고리 ${r.categories_created}건 자동 생성` : ""),
+  },
+  results: {
+    hint: "열: date(YYYY-MM-DD), item_name, value, note. 현재 로그인한 사용자의 결과로 저장됩니다. 같은 항목·날짜가 있으면 덮어씁니다.",
+    template: "date,item_name,value,note\n2024-03-15,AST,28,국가건강검진\n2024-03-15,요잠혈,음성,국가건강검진\n",
+    path: () => `/api/users/${currentUser.id}/import/results`,
+    summary: (r) => `결과 ${r.created}건 추가, ${r.updated}건 갱신`,
+  },
+};
+
+function openImportDialog() {
+  document.getElementById("imp-file").value = "";
+  onImportKindChange();
+  document.getElementById("import-dialog").showModal();
+}
+
+function onImportKindChange() {
+  const kind = IMPORT_KINDS[document.getElementById("imp-kind").value];
+  document.getElementById("imp-hint").textContent = kind.hint;
+  clearImportResult();
+}
+
+function clearImportResult() {
+  const box = document.getElementById("imp-result");
+  box.hidden = true;
+  box.innerHTML = "";
+}
+
+function showImportResult(lines, isError) {
+  const box = document.getElementById("imp-result");
+  box.className = isError ? "import-result error" : "import-result";
+  box.innerHTML = lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("");
+  box.hidden = false;
+}
+
+/* 양식: 헤더 + 예시 줄. 엑셀이 한글을 바로 읽도록 UTF-8 BOM을 붙인다 */
+function downloadTemplate() {
+  const key = document.getElementById("imp-kind").value;
+  const blob = new Blob(["\ufeff" + IMPORT_KINDS[key].template], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${key}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* UTF-8로 읽어 보고 깨지면 CP949(엑셀 기본 저장)로 다시 읽는다 */
+async function readCsvFile(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder("euc-kr").decode(buf);
+  }
+}
+
+document.getElementById("import-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const file = document.getElementById("imp-file").files[0];
+  if (!file) return;
+  const kind = IMPORT_KINDS[document.getElementById("imp-kind").value];
+  const btn = document.getElementById("imp-submit");
+  btn.disabled = true;
+  try {
+    const res = await fetch(kind.path(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ csv: await readCsvFile(file) }),
+    });
+    const j = await res.json();
+    if (!res.ok) {
+      // 검증 오류는 행 번호가 붙은 배열로 온다
+      showImportResult(Array.isArray(j.detail) ? j.detail : [String(j.detail ?? "요청에 실패했습니다")], true);
+      return;
+    }
+    showImportResult([kind.summary(j)], false);
+    document.getElementById("imp-file").value = "";
+    await reloadItemsAndCategories();
+  } finally {
+    btn.disabled = false;
+  }
+};
+
 /* ===== 시작 ===== */
 (async function start() {
   users = await api("/api/users");

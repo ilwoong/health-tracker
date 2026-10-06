@@ -29,6 +29,11 @@ Raspberry Pi 5 + Docker 환경을 대상으로 하며, PC/모바일 브라우저
 - 표시 순서: 대시보드 헤더 `설정 ▾` → `순서 편집`에서 ▲▼ 버튼으로 카테고리와 항목 순서를 지정 (모든 사용자 공유)
   - 지정하지 않은 것은 이름순. 새 항목·카테고리는 이름순으로 뒤에 붙음
   - 대시보드·일괄 입력·항목 폼의 카테고리 선택이 같은 순서를 따름
+- CSV 가져오기: `설정 ▾` → `CSV 가져오기`. 카테고리 / 검진 항목(판정 구간 포함) / 검진 결과(현재 사용자) 세 종류
+  - 양식 다운로드 제공. UTF-8과 CP949(Windows 엑셀 기본 저장) 모두 읽음
+  - 파일 전체를 먼저 검증하고 오류가 하나라도 있으면 행 번호와 함께 보여 주고 아무것도 저장하지 않음
+  - 이름이 같으면 덮어쓰기(항목은 구간 전체 교체), 항목 CSV의 없는 카테고리는 자동 생성
+  - 형식은 [spec/004](spec/004-csv-import.md) 참고
 - 대시보드: 항목별 최근 결과 카드 + 판정 배지 + 항목 검색
 - 상세: Chart.js 선 그래프(판정 구간을 색상 밴드로 표시) + 기록 표
   - 조회 기간 설정: 전체 / 최근 1·3·5년 프리셋 + 사용자 지정 기간
@@ -85,6 +90,8 @@ SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLO
 - `GET/POST /api/users`, `PUT/DELETE /api/users/{id}`
 - `GET/POST /api/categories`, `PUT/DELETE /api/categories/{id}` — 응답에 소속 항목 수(`item_count`) 포함
 - `PUT /api/order` — body `{category_ids, item_ids}`, 배열 인덱스를 표시 순서로 저장 (한 트랜잭션)
+- `POST /api/import/categories`, `POST /api/import/items`, `POST /api/users/{uid}/import/results` — body `{csv}`
+  - 검증 오류는 422, `detail`은 행 번호가 붙은 메시지 배열
 - `GET /api/items[?gender=M|F]`, `POST /api/items`, `PUT/DELETE /api/items/{id}`
   - ranges 포함, PUT은 구간 전체 교체
   - TEXT 항목은 ranges를 비워야 하고, NUMBER 항목은 1개 이상 필요

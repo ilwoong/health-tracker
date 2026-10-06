@@ -46,6 +46,7 @@
         <div class="menu-list">
           <button type="button" onclick="closeSettingsMenu(); openCategoryDialog()">카테고리 관리</button>
           <button type="button" onclick="closeSettingsMenu(); openOrderDialog()">순서 편집</button>
+          <button type="button" onclick="closeSettingsMenu(); openImportDialog()">CSV 가져오기</button>
         </div>
       </details>
       <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
@@ -240,6 +241,31 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('order-dialog').close()">취소</button>
       <button type="submit" class="btn btn-primary">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== CSV 가져오기 모달 ===== -->
+<dialog id="import-dialog">
+  <form id="import-form">
+    <h2>CSV 가져오기</h2>
+    <label>종류
+      <select id="imp-kind" onchange="onImportKindChange()">
+        <option value="categories">카테고리</option>
+        <option value="items">검진 항목 (판정 구간 포함)</option>
+        <option value="results">검진 결과 (현재 사용자)</option>
+      </select>
+    </label>
+    <p id="imp-hint" class="hint"></p>
+    <div class="import-row">
+      <input type="file" id="imp-file" accept=".csv,text/csv" required onchange="clearImportResult()">
+      <button type="button" class="btn btn-ghost btn-small" onclick="downloadTemplate()">양식 다운로드</button>
+    </div>
+    <p class="hint">파일 전체를 먼저 검증하고, 오류가 하나라도 있으면 아무것도 저장하지 않습니다. 이름이 같은 것은 덮어씁니다. UTF-8과 CP949(엑셀 기본) 모두 읽습니다.</p>
+    <div id="imp-result" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('import-dialog').close()">닫기</button>
+      <button type="submit" id="imp-submit" class="btn btn-primary">가져오기</button>
     </div>
   </form>
 </dialog>

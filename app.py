@@ -7,6 +7,8 @@
 - checkup_item_ranges: 항목별 판정 구간 (정상/경계/위험 등, 항목당 판정 수준별 1개)
 - checkup_results:     사용자별 검진 결과 (UNIQUE(user_id, item_id, date) → 같은 날짜 재입력 시 덮어쓰기)
 """
+import csv
+import io
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -16,7 +18,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "health.db"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -621,6 +623,214 @@ def delete_result(result_id: int):
     with db() as conn:
         _get_or_404(conn, "checkup_results", result_id, "검진 결과")
         conn.execute("DELETE FROM checkup_results WHERE id = ?", (result_id,))
+
+
+# ---------- CSV 가져오기 (spec/004) ----------
+
+class CsvIn(BaseModel):
+    csv: str
+
+
+def _read_csv(text: str, required: list[str]) -> list[tuple[int, dict]]:
+    """(행 번호, {열: 값}) 목록. 헤더 검사, 값 공백 제거, 빈 줄 제외."""
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    headers = [h.strip() for h in (reader.fieldnames or [])]
+    missing = [c for c in required if c not in headers]
+    if missing:
+        raise HTTPException(422, [f"필요한 열이 없습니다: {', '.join(missing)}"])
+    rows = []
+    for raw in reader:
+        row = {k.strip(): (v or "").strip() for k, v in raw.items() if k is not None}
+        if any(row.values()):
+            rows.append((reader.line_num, row))
+    if not rows:
+        raise HTTPException(422, ["데이터 줄이 없습니다"])
+    return rows
+
+
+def _validation_msgs(e: ValidationError) -> str:
+    return "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors())
+
+
+def _suggest_color(label: str) -> str:
+    """static/app.js의 suggestColor와 같은 키워드 규칙."""
+    if "정상" in label:
+        return "ok"
+    if any(k in label for k in ("저", "낮")):
+        return "lowish"
+    if any(k in label for k in ("경계", "주의", "전단계", "전 단계", "양호")):
+        return "warn"
+    if any(k in label for k in ("위험", "비만", "고도", "이상", "높", "고")):
+        return "danger"
+    return "etc"
+
+
+@app.post("/api/import/categories")
+def import_categories(body: CsvIn):
+    rows = _read_csv(body.csv, ["name"])
+    errors, names = [], []
+    for ln, row in rows:
+        try:
+            names.append(CategoryIn(name=row["name"]).name)
+        except ValidationError as e:
+            errors.append(f"{ln}행: {_validation_msgs(e)}")
+    if errors:
+        raise HTTPException(422, errors)
+    created = updated = 0
+    with db() as conn:
+        for name in names:
+            cur = conn.execute("INSERT OR IGNORE INTO checkup_categories (name) VALUES (?)", (name,))
+            if cur.rowcount:
+                created += 1
+            else:
+                updated += 1   # 이름뿐이라 바뀌는 건 없지만 '있던 것'으로 집계
+    return {"created": created, "updated": updated}
+
+
+@app.post("/api/import/items")
+def import_items(body: CsvIn):
+    rows = _read_csv(body.csv, ["item_name"])
+    errors: list[str] = []
+    groups: dict[tuple[str, str], dict] = {}   # (이름, 성별) → {first_ln, fields, ranges}
+    for ln, row in rows:
+        key = (row["item_name"], row.get("target_gender") or "ALL")
+        fields = {
+            "item_name": row["item_name"],
+            "category": row.get("category", ""),
+            "unit": row.get("unit", ""),
+            "value_type": row.get("value_type") or "NUMBER",
+            "target_gender": key[1],
+        }
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {"ln": ln, "fields": fields, "ranges": []}
+        elif g["fields"] != fields:
+            errors.append(f"{ln}행: '{key[0]}' 항목의 카테고리/단위/값 유형이 {g['ln']}행과 다릅니다")
+            continue
+        level = row.get("judgement_level", "")
+        has_range = any(row.get(c) for c in ("judgement_level", "min_value", "max_value", "color"))
+        if not has_range:
+            continue
+        try:
+            rng = {
+                "judgement_level": level,
+                "min_value": float(row["min_value"]) if row.get("min_value") else None,
+                "max_value": float(row["max_value"]) if row.get("max_value") else None,
+                "color": row.get("color") or _suggest_color(level),
+            }
+        except ValueError:
+            errors.append(f"{ln}행: '{key[0]}' 항목의 min_value/max_value가 숫자가 아닙니다")
+            g["bad"] = True
+            continue
+        g["ranges"].append(rng)
+
+    items: list[ItemIn] = []
+    for (name, _), g in groups.items():
+        if g.get("bad"):
+            continue
+        try:
+            f = dict(g["fields"]); category = f.pop("category")
+            items.append((category, ItemIn(**f, ranges=g["ranges"])))
+        except ValidationError as e:
+            errors.append(f"{g['ln']}행: '{name}' {_validation_msgs(e)}")
+    if errors:
+        raise HTTPException(422, errors)
+
+    created = updated = categories_created = 0
+    with db() as conn:
+        for category, it in items:
+            category_id = None
+            if category:
+                row = conn.execute("SELECT id FROM checkup_categories WHERE name = ?", (category,)).fetchone()
+                if row:
+                    category_id = row["id"]
+                else:
+                    category_id = conn.execute(
+                        "INSERT INTO checkup_categories (name) VALUES (?)", (category,)).lastrowid
+                    categories_created += 1
+            existing = conn.execute(
+                "SELECT * FROM checkup_items WHERE item_name = ? AND target_gender = ?",
+                (it.item_name, it.target_gender),
+            ).fetchone()
+            try:
+                _check_item_name_rule(conn, it.item_name, it.target_gender,
+                                      exclude_id=existing["id"] if existing else None)
+                if existing and existing["value_type"] != it.value_type and conn.execute(
+                        "SELECT 1 FROM checkup_results WHERE item_id = ? LIMIT 1", (existing["id"],)).fetchone():
+                    raise HTTPException(409, "이미 기록이 있는 항목의 값 유형은 변경할 수 없습니다")
+            except HTTPException as e:
+                raise HTTPException(422, [f"'{it.item_name}': {e.detail}"])
+            if existing:
+                item_id = existing["id"]
+                conn.execute(
+                    """UPDATE checkup_items
+                          SET unit = ?, value_type = ?, category_id = ? WHERE id = ?""",
+                    (it.unit.strip(), it.value_type, category_id, item_id))
+                conn.execute("DELETE FROM checkup_item_ranges WHERE item_id = ?", (item_id,))
+                updated += 1
+            else:
+                item_id = conn.execute(
+                    """INSERT INTO checkup_items (item_name, unit, value_type, target_gender, category_id)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (it.item_name, it.unit.strip(), it.value_type, it.target_gender, category_id)).lastrowid
+                created += 1
+            for r in it.ranges:
+                conn.execute(
+                    """INSERT INTO checkup_item_ranges (item_id, min_value, max_value, judgement_level, color)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (item_id, r.min_value, r.max_value, r.judgement_level, r.color))
+    return {"created": created, "updated": updated, "categories_created": categories_created}
+
+
+@app.post("/api/users/{user_id}/import/results")
+def import_results(user_id: int, body: CsvIn):
+    rows = _read_csv(body.csv, ["date", "item_name", "value"])
+    with db() as conn:
+        user = _get_or_404(conn, "users", user_id, "사용자")
+        visible = {
+            r["item_name"]: r for r in conn.execute(
+                "SELECT * FROM checkup_items WHERE target_gender IN ('ALL', ?)", (user["gender"],))
+        }
+        errors, entries, seen = [], [], {}
+        for ln, row in rows:
+            item = visible.get(row["item_name"])
+            if not item:
+                errors.append(f"{ln}행: '{row['item_name']}' 항목이 없습니다")
+                continue
+            dup_key = (item["id"], row["date"])
+            if dup_key in seen:
+                errors.append(f"{ln}행: '{row['item_name']}' {row['date']} 결과가 {seen[dup_key]}행에도 있습니다")
+                continue
+            seen[dup_key] = ln
+            if not row["value"]:
+                errors.append(f"{ln}행: '{row['item_name']}' 값이 비어 있습니다")
+                continue
+            kw = {"date": row["date"], "note": row.get("note", "")}
+            if item["value_type"] == "NUMBER":
+                try:
+                    kw["value"] = float(row["value"])
+                except ValueError:
+                    errors.append(f"{ln}행: '{row['item_name']}' 숫자형 항목인데 값이 숫자가 아닙니다")
+                    continue
+            else:
+                kw["value_text"] = row["value"]
+            try:
+                entries.append((item, ResultIn(**kw)))
+            except ValidationError as e:
+                errors.append(f"{ln}행: {_validation_msgs(e)}")
+        if errors:
+            raise HTTPException(422, errors)
+        created = updated = 0
+        for item, value in entries:
+            exists = conn.execute(
+                "SELECT 1 FROM checkup_results WHERE user_id = ? AND item_id = ? AND date = ?",
+                (user_id, item["id"], value.date)).fetchone()
+            _upsert_result(conn, user_id, item, value.date, value)
+            if exists:
+                updated += 1
+            else:
+                created += 1
+        return {"created": created, "updated": updated}
 
 
 # ---------- 정적 파일 ----------
