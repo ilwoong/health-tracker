@@ -878,13 +878,13 @@ function renderCategoryList() {
       const name = prompt("새 이름", c.name);
       if (name == null || name.trim() === "" || name.trim() === c.name) return;
       await api(`/api/categories/${c.id}`, { method: "PUT", body: JSON.stringify({ name }) });
-      await reloadAfterCategoryChange();
+      await reloadItemsAndCategories();
     };
     delBtn.onclick = async () => {
       const tail = c.item_count ? ` 소속 항목 ${c.item_count}개는 미분류가 됩니다.` : "";
       if (!confirm(`'${c.name}' 카테고리를 삭제할까요?${tail}`)) return;
       await api(`/api/categories/${c.id}`, { method: "DELETE" });
-      await reloadAfterCategoryChange();
+      await reloadItemsAndCategories();
     };
     list.appendChild(row);
   }
@@ -895,11 +895,11 @@ document.getElementById("cat-form").onsubmit = async (e) => {
   const name = document.getElementById("c-name").value;
   await api("/api/categories", { method: "POST", body: JSON.stringify({ name }) });
   document.getElementById("c-name").value = "";
-  await reloadAfterCategoryChange();
+  await reloadItemsAndCategories();
 };
 
-/* 카테고리 변경 후: 목록·항목(category_id) 다시 불러오고 모달과 대시보드 갱신 */
-async function reloadAfterCategoryChange() {
+/* 카테고리·순서 변경 후: 목록·항목 다시 불러오고 카테고리 모달과 대시보드 갱신 */
+async function reloadItemsAndCategories() {
   [items, categories] = await Promise.all([
     api(`/api/users/${currentUser.id}/summary`),
     api("/api/categories"),
@@ -907,6 +907,71 @@ async function reloadAfterCategoryChange() {
   renderCategoryList();
   renderDashboard();
 }
+
+/* ===== 순서 편집 모달 ===== */
+let orderGroups = [];   // 편집 중인 순서 [{id, name, items}]. 미분류(id null)는 항상 마지막
+
+async function openOrderDialog() {
+  const all = await api("/api/items");   // 순서는 공유이므로 성별과 무관하게 전체 항목
+  orderGroups = categories.map((c) => ({ id: c.id, name: c.name, items: all.filter((i) => i.category_id === c.id) }));
+  const none = all.filter((i) => i.category_id == null);
+  if (none.length) orderGroups.push({ id: null, name: "미분류", items: none });
+  renderOrderList();
+  document.getElementById("order-dialog").showModal();
+}
+
+function renderOrderList() {
+  const box = document.getElementById("order-list");
+  box.innerHTML = "";
+  const lastMovable = orderGroups.filter((g) => g.id != null).length - 1;
+  orderGroups.forEach((g, gi) => {
+    if (categories.length) {   // 카테고리가 하나도 없으면 항목 목록만
+      const head = document.createElement("div");
+      head.className = "order-row order-cat";
+      head.innerHTML = `<span class="order-name">${escapeHtml(g.name)}</span>` +
+        (g.id != null ? arrowsHtml(gi === 0, gi === lastMovable) : `<span class="order-fixed">항상 마지막</span>`);
+      bindArrows(head, (d) => { swapInArray(orderGroups, gi, gi + d); renderOrderList(); });
+      box.appendChild(head);
+    }
+    g.items.forEach((it, ii) => {
+      const row = document.createElement("div");
+      row.className = "order-row order-item";
+      const tag = it.target_gender !== "ALL" ? `<span class="gender-tag">${GENDER_LABEL[it.target_gender]}</span>` : "";
+      row.innerHTML = `<span class="order-name">${escapeHtml(it.item_name)}${tag}</span>` +
+        arrowsHtml(ii === 0, ii === g.items.length - 1);
+      bindArrows(row, (d) => { swapInArray(g.items, ii, ii + d); renderOrderList(); });
+      box.appendChild(row);
+    });
+  });
+}
+
+function arrowsHtml(first, last) {
+  return `<span class="order-arrows">
+    <button type="button" class="btn btn-ghost btn-small" data-d="-1" aria-label="위로" ${first ? "disabled" : ""}>&#9650;</button>
+    <button type="button" class="btn btn-ghost btn-small" data-d="1" aria-label="아래로" ${last ? "disabled" : ""}>&#9660;</button>
+  </span>`;
+}
+
+function bindArrows(row, onMove) {
+  row.querySelectorAll("[data-d]").forEach((b) => { b.onclick = () => onMove(Number(b.dataset.d)); });
+}
+
+function swapInArray(arr, i, j) {
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+}
+
+document.getElementById("order-form").onsubmit = async (e) => {
+  e.preventDefault();
+  await api("/api/order", {
+    method: "PUT",
+    body: JSON.stringify({
+      category_ids: orderGroups.filter((g) => g.id != null).map((g) => g.id),
+      item_ids: orderGroups.flatMap((g) => g.items.map((i) => i.id)),
+    }),
+  });
+  document.getElementById("order-dialog").close();
+  await reloadItemsAndCategories();
+};
 
 /* ===== 시작 ===== */
 (async function start() {

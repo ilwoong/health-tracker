@@ -2,8 +2,8 @@
 
 테이블 구조 (spec/design.md의 타입을 SQLite 관례로 매핑: VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLOAT→REAL)
 - users:               사용자 (이름 UNIQUE, 생일, 성별 M/F)
-- checkup_categories:  검진 항목 카테고리 (이름 UNIQUE)
-- checkup_items:       검진 항목 (이름 UNIQUE, 단위, 대상 성별 ALL/M/F, 카테고리 FK nullable)
+- checkup_categories:  검진 항목 카테고리 (이름 UNIQUE, 표시 순서 nullable)
+- checkup_items:       검진 항목 (이름 UNIQUE, 단위, 대상 성별 ALL/M/F, 카테고리 FK nullable, 표시 순서 nullable)
 - checkup_item_ranges: 항목별 판정 구간 (정상/경계/위험 등, 항목당 판정 수준별 1개)
 - checkup_results:     사용자별 검진 결과 (UNIQUE(user_id, item_id, date) → 같은 날짜 재입력 시 덮어쓰기)
 """
@@ -49,8 +49,9 @@ def init_db():
             gender     TEXT NOT NULL CHECK (gender IN ('M', 'F'))
         );
         CREATE TABLE IF NOT EXISTS checkup_categories (
-            id   INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL UNIQUE,
+            sort_order INTEGER                    -- NULL이면 이름순으로 뒤에
         );
         CREATE TABLE IF NOT EXISTS checkup_items (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +60,7 @@ def init_db():
             value_type    TEXT NOT NULL DEFAULT 'NUMBER' CHECK (value_type IN ('NUMBER', 'TEXT')),
             target_gender TEXT NOT NULL DEFAULT 'ALL' CHECK (target_gender IN ('ALL', 'M', 'F')),
             category_id   INTEGER REFERENCES checkup_categories(id) ON DELETE SET NULL,  -- NULL이면 미분류
+            sort_order    INTEGER,               -- 카테고리 안 표시 순서. NULL이면 이름순으로 뒤에
             UNIQUE (item_name, target_gender)
         );
         CREATE TABLE IF NOT EXISTS checkup_item_ranges (
@@ -85,11 +87,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_results_user_item_date
             ON checkup_results (user_id, item_id, date);
         """)
-        # 마이그레이션: category_id 도입(spec/001) 이전에 만든 DB에 컬럼 추가
-        cols = [r["name"] for r in conn.execute("PRAGMA table_info(checkup_items)")]
-        if "category_id" not in cols:
+        # 마이그레이션: 컬럼 도입 이전에 만든 DB에 컬럼 추가
+        item_cols = [r["name"] for r in conn.execute("PRAGMA table_info(checkup_items)")]
+        if "category_id" not in item_cols:   # spec/001
             conn.execute("""ALTER TABLE checkup_items ADD COLUMN category_id INTEGER
                             REFERENCES checkup_categories(id) ON DELETE SET NULL""")
+        if "sort_order" not in item_cols:    # spec/003
+            conn.execute("ALTER TABLE checkup_items ADD COLUMN sort_order INTEGER")
+        cat_cols = [r["name"] for r in conn.execute("PRAGMA table_info(checkup_categories)")]
+        if "sort_order" not in cat_cols:     # spec/003
+            conn.execute("ALTER TABLE checkup_categories ADD COLUMN sort_order INTEGER")
 
 
 init_db()
@@ -136,6 +143,17 @@ class CategoryIn(BaseModel):
         if v == "미분류":
             raise ValueError("'미분류'는 카테고리 이름으로 쓸 수 없습니다")
         return v
+
+
+class OrderIn(BaseModel):
+    category_ids: list[int] = []
+    item_ids: list[int] = []
+
+    @model_validator(mode="after")
+    def no_duplicates(self):
+        if len(self.category_ids) != len(set(self.category_ids)) or len(self.item_ids) != len(set(self.item_ids)):
+            raise ValueError("같은 id가 중복되었습니다")
+        return self
 
 
 class RangeIn(BaseModel):
@@ -340,7 +358,7 @@ def delete_user(user_id: int):
 
 def _category_row(conn, category_id: int) -> dict:
     row = conn.execute(
-        """SELECT c.id, c.name,
+        """SELECT c.id, c.name, c.sort_order,
                   (SELECT COUNT(*) FROM checkup_items WHERE category_id = c.id) AS item_count
              FROM checkup_categories c WHERE c.id = ?""",
         (category_id,),
@@ -354,10 +372,10 @@ def _category_row(conn, category_id: int) -> dict:
 def list_categories():
     with db() as conn:
         rows = conn.execute(
-            """SELECT c.id, c.name,
+            """SELECT c.id, c.name, c.sort_order,
                       (SELECT COUNT(*) FROM checkup_items WHERE category_id = c.id) AS item_count
                  FROM checkup_categories c
-                ORDER BY c.name COLLATE NOCASE, c.id"""
+                ORDER BY c.sort_order IS NULL, c.sort_order, c.name COLLATE NOCASE, c.id"""
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -391,6 +409,20 @@ def delete_category(category_id: int):
         conn.execute("DELETE FROM checkup_categories WHERE id = ?", (category_id,))
 
 
+# ---------- 표시 순서 API ----------
+
+@app.put("/api/order", status_code=204)
+def save_order(body: OrderIn):
+    """배열 인덱스를 sort_order로 저장. 배열에 없는 것은 건드리지 않는다."""
+    with db() as conn:
+        for i, cid in enumerate(body.category_ids):
+            _get_or_404(conn, "checkup_categories", cid, "카테고리")
+            conn.execute("UPDATE checkup_categories SET sort_order = ? WHERE id = ?", (i, cid))
+        for i, iid in enumerate(body.item_ids):
+            _get_or_404(conn, "checkup_items", iid, "검진 항목")
+            conn.execute("UPDATE checkup_items SET sort_order = ? WHERE id = ?", (i, iid))
+
+
 # ---------- 검진 항목 API ----------
 
 @app.get("/api/items")
@@ -399,11 +431,14 @@ def list_items(gender: Literal["M", "F"] | None = None):
     with db() as conn:
         if gender:
             rows = conn.execute(
-                "SELECT * FROM checkup_items WHERE target_gender IN ('ALL', ?) ORDER BY item_name COLLATE NOCASE, id",
+                """SELECT * FROM checkup_items WHERE target_gender IN ('ALL', ?)
+                    ORDER BY sort_order IS NULL, sort_order, item_name COLLATE NOCASE, id""",
                 (gender,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM checkup_items ORDER BY item_name COLLATE NOCASE, id").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM checkup_items ORDER BY sort_order IS NULL, sort_order, item_name COLLATE NOCASE, id"
+            ).fetchall()
         return [_item_with_ranges(conn, r) for r in rows]
 
 
@@ -494,7 +529,7 @@ def user_summary(user_id: int):
                         WHERE user_id = ? AND item_id = i.id) AS result_count
                  FROM checkup_items i
                 WHERE i.target_gender IN ('ALL', ?)
-                ORDER BY i.item_name COLLATE NOCASE, i.id""",
+                ORDER BY i.sort_order IS NULL, i.sort_order, i.item_name COLLATE NOCASE, i.id""",
             (user_id, user_id, user_id, user_id, user["gender"]),
         ).fetchall()
         return [_item_with_ranges(conn, r) for r in items]

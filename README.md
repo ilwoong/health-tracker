@@ -24,9 +24,12 @@ Raspberry Pi 5 + Docker 환경을 대상으로 하며, PC/모바일 브라우저
     구간이 2개 이상이면 어느 구간에도 속하지 않는 값은 판정 없음
 - 카테고리: 검진 항목을 묶는 1단계 분류 (예: 혈액, 간기능). 대시보드 헤더의 `카테고리 관리`에서 추가/이름 변경/삭제
   - 카테고리가 없는 항목은 '미분류'. 카테고리를 삭제해도 항목은 남고 미분류가 됨
-  - 카테고리가 지정된 항목이 하나라도 있으면 대시보드와 일괄 입력 화면을 카테고리별 섹션(이름순, 미분류 마지막)으로 묶음
+  - 카테고리가 지정된 항목이 하나라도 있으면 대시보드와 일괄 입력 화면을 카테고리별 섹션(미분류 마지막)으로 묶음
   - 대시보드에는 필터 칩(전체/카테고리/미분류)이 추가되고 검색과 함께(AND) 적용됨
-- 대시보드: 항목별 최근 결과 카드(항목 이름순) + 판정 배지 + 항목 검색
+- 표시 순서: 대시보드 헤더의 `순서 편집`에서 ▲▼ 버튼으로 카테고리와 항목 순서를 지정 (모든 사용자 공유)
+  - 지정하지 않은 것은 이름순. 새 항목·카테고리는 이름순으로 뒤에 붙음
+  - 대시보드·일괄 입력·항목 폼의 카테고리 선택이 같은 순서를 따름
+- 대시보드: 항목별 최근 결과 카드 + 판정 배지 + 항목 검색
 - 상세: Chart.js 선 그래프(판정 구간을 색상 밴드로 표시) + 기록 표
   - 조회 기간 설정: 전체 / 최근 1·3·5년 프리셋 + 사용자 지정 기간
 - 결과 입력: 과거 날짜 소급 입력 가능(항상 날짜순 정렬), 같은 날짜 재입력 시 덮어쓰기
@@ -64,9 +67,9 @@ spec/NNN-*.md        추가 기능 스펙
 ## DB 구조 (spec/design.md 매핑)
 SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLOAT→REAL로 매핑했습니다.
 - users(id, name UNIQUE, birth_date, gender CHECK(M,F))
-- checkup_categories(id, name UNIQUE)
+- checkup_categories(id, name UNIQUE, sort_order NULL)
 - checkup_items(id, item_name, unit, value_type CHECK(NUMBER,TEXT), target_gender CHECK(ALL,M,F),
-  category_id FK NULL ON DELETE SET NULL, UNIQUE(item_name, target_gender))
+  category_id FK NULL ON DELETE SET NULL, sort_order NULL, UNIQUE(item_name, target_gender))
 - checkup_item_ranges(id, item_id FK, min_value, max_value, judgement_level,
   color CHECK(ok,lowish,warn,danger,etc), UNIQUE(item_id, judgement_level))
 - checkup_results(id, user_id FK, item_id FK, date, value NULL, value_text NULL, note,
@@ -75,12 +78,13 @@ SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLO
 사용자·항목 삭제 시 관련 구간과 결과는 함께 삭제됩니다 (ON DELETE CASCADE).
 
 > 참고: 테이블은 `CREATE TABLE IF NOT EXISTS`로 생성됩니다. 마이그레이션은 앱 시작 시 `init_db`에서
-> 컬럼 존재 여부를 확인해 처리하며, 현재는 `checkup_items.category_id` 추가(spec/001)만 있습니다.
+> 컬럼 존재 여부를 확인해 처리하며, 현재는 `category_id`(spec/001)와 `sort_order`(spec/003) 추가가 있습니다.
 > 그보다 오래된 스키마(value_type, value_text, color가 없는 DB)는 자동으로 올라가지 않습니다.
 
 ## API 요약
 - `GET/POST /api/users`, `PUT/DELETE /api/users/{id}`
 - `GET/POST /api/categories`, `PUT/DELETE /api/categories/{id}` — 응답에 소속 항목 수(`item_count`) 포함
+- `PUT /api/order` — body `{category_ids, item_ids}`, 배열 인덱스를 표시 순서로 저장 (한 트랜잭션)
 - `GET /api/items[?gender=M|F]`, `POST /api/items`, `PUT/DELETE /api/items/{id}`
   - ranges 포함, PUT은 구간 전체 교체
   - TEXT 항목은 ranges를 비워야 하고, NUMBER 항목은 1개 이상 필요

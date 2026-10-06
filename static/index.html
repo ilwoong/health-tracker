@@ -41,6 +41,7 @@
     <div class="header-actions">
       <button class="btn btn-ghost" onclick="logout()">사용자 전환</button>
       <button class="btn btn-ghost" onclick="openCategoryDialog()">카테고리 관리</button>
+      <button class="btn btn-ghost" onclick="openOrderDialog()">순서 편집</button>
       <button class="btn btn-ghost" onclick="showBatch()">일괄 입력</button>
       <button class="btn btn-primary" onclick="openItemForm()">+ 항목 추가</button>
     </div>
@@ -221,6 +222,19 @@
     </div>
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('cat-dialog').close()">닫기</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 순서 편집 모달 ===== -->
+<dialog id="order-dialog">
+  <form id="order-form">
+    <h2>순서 편집</h2>
+    <p class="hint">카테고리는 소속 항목과 함께 움직입니다. 항목은 같은 카테고리 안에서만 움직이며, 카테고리를 바꾸려면 항목 수정에서 하세요.</p>
+    <div id="order-list" class="order-list"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('order-dialog').close()">취소</button>
+      <button type="submit" class="btn btn-primary">저장</button>
     </div>
   </form>
 </dialog>
