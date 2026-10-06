@@ -1,6 +1,6 @@
-"""Health Tracker - 가족 건강검진 기록 관리 (design.md 기반)
+"""Health Tracker - 가족 건강검진 기록 관리 (spec/design.md 기반)
 
-테이블 구조 (design.md의 타입을 SQLite 관례로 매핑: VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLOAT→REAL)
+테이블 구조 (spec/design.md의 타입을 SQLite 관례로 매핑: VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLOAT→REAL)
 - users:               사용자 (이름 UNIQUE, 생일, 성별 M/F)
 - checkup_items:       검진 항목 (이름 UNIQUE, 단위, 대상 성별 ALL/M/F)
 - checkup_item_ranges: 항목별 판정 구간 (정상/경계/위험 등, 항목당 판정 수준별 1개)

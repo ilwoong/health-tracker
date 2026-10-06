@@ -1,6 +1,6 @@
 # Health Tracker — 가족 건강검진 기록 관리
 
-design.md 요구사항 기반의 셀프호스팅 웹앱(PWA)입니다.
+[spec/design.md](spec/design.md) 요구사항 기반의 셀프호스팅 웹앱(PWA)입니다.
 Raspberry Pi 5 + Docker 환경을 대상으로 하며, PC/모바일 브라우저에서 동작합니다.
 
 ## 주요 기능
@@ -49,10 +49,11 @@ static/app.js        프론트엔드 로직 (Vanilla JS, Chart.js)
 static/style.css     스타일
 static/sw.js         Service Worker (PWA 오프라인 캐시)
 static/manifest.json PWA 매니페스트
-design.md            요구사항 명세
+spec/design.md       기본 요구사항 명세
+spec/NNN-*.md        추가 기능 스펙
 ```
 
-## DB 구조 (design.md 매핑)
+## DB 구조 (spec/design.md 매핑)
 SQLite 관례에 따라 VARCHAR→TEXT, ENUM→TEXT+CHECK, DATE→TEXT(ISO), FLOAT→REAL로 매핑했습니다.
 - users(id, name UNIQUE, birth_date, gender CHECK(M,F))
 - checkup_items(id, item_name, unit, value_type CHECK(NUMBER,TEXT), target_gender CHECK(ALL,M,F),
